@@ -118,10 +118,11 @@ def get_qa_chain(session_id: str, target_titles: list[str] = None):
     db = get_chroma_shared()
     memory = get_memory(session_id)
 
-    retriever = db.as_retriever(search_kwargs={
-        "k": 10,
-        "filter": {"title": {"$in": target_titles}} if target_titles else {}
-    })
+    search_kwargs = {"k": 10}
+    if target_titles:
+        search_kwargs["filter"] = {"title": {"$in": target_titles}}
+
+    retriever = db.as_retriever(search_kwargs=search_kwargs)
 
     return RetrievalQA.from_chain_type(
         llm=llm,
