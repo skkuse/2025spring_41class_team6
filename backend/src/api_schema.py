@@ -2,6 +2,17 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
+# 사용자 관련 모델
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    nickname: str
+
+class UserInfoResponse(BaseModel):
+    id: int
+    email: str
+    nickname: str
+
 # 채팅방 관련 모델
 class ChatRoom(BaseModel):
     id: int
