@@ -1,170 +1,164 @@
-from datetime import date, datetime
-from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from database.utils import *
-from database.models import Base, engine, SessionLocal, User
+from fastapi import FastAPI, Path, Body
+from datetime import datetime
+from api_schema import *
 
-# table 자동 생성
-Base.metadata.create_all(bind=engine)
-
-app = FastAPI() # entry point
-
-class ChatRoomCreate(BaseModel):
-  initial_message: str
+app = FastAPI()
 
 
-class MessageRequest(BaseModel):
-  content: str
-
-class ChatMessage(BaseModel):
-  user_message: str
-  ai_message: str
-  timestamp: datetime
-
-class ChatRoom(BaseModel):
-  id: int
-  title: str
-  chats: list[ChatMessage]
-
-class MovieData(BaseModel):
-  id: int
-  title: str
-  overview: str|None
-  wiki_document: str|None
-  release_date: date
-  poster_img_url: str|None
-  trailer_img_url: str|None
-  rating: int
-  ordering: int
-
-class _chatresponse(BaseModel):
-  text: str
-
-  def getText(self): return self.text
-
-# DB session을 가져옵니다.
-def get_db():
-  db = SessionLocal()
-  try:
-    yield db
-  finally:
-    db.close()
-
-def _map_to_chat_message(internal_doc) -> ChatMessage:
-  return ChatMessage(
-    user_message=internal_doc["user_chat"],
-    ai_message=internal_doc["ai_chat"],
-    timestamp=internal_doc["timestamp"]
-  )
-
-def _map_to_movie_data(internal_data) -> MovieData:
-  raise NotImplementedError
-
-
-async def _send_message_to_ai(msg: str, cxt) -> _chatresponse:
-  raise NotImplementedError
-
-
-
-def getUser(db: Session, email: str, password: str, nickname: str):
-  return db_create_new_user(db, email, password, nickname)
-
-@app.get("/")
+@app.get("/api/")
 async def root():
-  return {}
+    return {"test": "HTTP 418: I'm a teapot"}
 
-@app.post("/chatrooms", response_model=ChatRoom)
-async def create_new_chatroom(data: ChatRoomCreate, db: Session = Depends(get_db)):
-  user_id = getUser(db, "paul3143@naver.com", "1234", "sk")
-  if user_id is None:
-    raise HTTPException(status_code=403, detail="Unauthorized")
 
-  res = db_make_new_chatroom(db, user_id)
-  if res is None:
-    raise HTTPException(status_code=500, detail="채팅방을 만들 수 없었습니다")
+# ---------------------------
+# /chatrooms
+# ---------------------------
+@app.get("/api/chatrooms")
+async def get_chatrooms():
+    return {
+        "normal": [
+            ChatRoom(id=1234, title="채팅방 이름"),
+            ChatRoom(id=356, title="채팅방 #2")
+        ],
+        "immersive": [
+            ChatRoom(id=534566000, title="몰입형 대화 #1")
+        ]
+    }
 
-  room_id = res["id"]
 
-  ret = ChatRoom(
-    id=room_id,
-    title=res["title"],
-    chats=[]
-  )
-  try:
-    response = await _send_message_to_ai(data.initial_message, None)
-    r = db_append_chat_message(db, room_id, data.initial_message, response.getText())
-    if r is not None:
-      ret.chats = [_map_to_chat_message(r)]
-    return ret
-  except:
-    raise HTTPException(status_code=500, detail="기타 서버 에러")
+@app.post("/api/chatrooms", response_model=CreateChatroomResponse)
+async def create_chatroom(payload: CreateChatroomRequest):
+    chats = []
+    if payload.initial_message:
+        chats.append(ChatHistory(
+            user_message=payload.initial_message,
+            ai_message="AI 응답 예시",
+            timestamp=datetime.now()
+        ))
+    return CreateChatroomResponse(
+        id=1234,
+        title="채팅방 이름",
+        chats=chats
+    )
 
-@app.post("/chatrooms/{room_id}/messages", response_model=ChatMessage)
-def send_message(room_id: int, message: MessageRequest, db: Session = Depends(get_db)):
-  cxt = db_get_chatroom_context(db, room_id)
-  if cxt is None:
-    raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다")
 
-  try:
-    response = _send_message_to_ai(message.content, cxt)
-  except Exception as e:
-    print(f"에러: {e}")
-    raise HTTPException(status_code=500, detail="AI 응답 오류")
+# ---------------------------
+# /chatrooms/{room_id}/messages
+# ---------------------------
+@app.get("/api/chatrooms/{room_id}/messages", response_model=List[ChatHistory])
+async def get_messages(room_id: int = Path(...)):
+    return [
+        ChatHistory(user_message="안녕", ai_message="안녕하세요!", timestamp=datetime.now()),
+        ChatHistory(user_message="이 영화 어때?", ai_message="추천할게요!", timestamp=datetime.now())
+    ]
 
-  db_update_chatroom_context(db, response, cxt)
-  return _map_to_chat_message(response)
 
-@app.get("/chatrooms/{room_id}/messages", response_model=list[ChatMessage])
-def chatroom_history(room_id: int, db: Session = Depends(get_db)):
-  history = db_get_chatroom_history(db, room_id)
-  if history is None:
-    raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다")
+@app.post("/api/chatrooms/{room_id}/messages", response_model=ChatHistory)
+async def post_message(room_id: int, payload: MessageRequest):
+    return ChatHistory(
+        user_message=payload.content,
+        ai_message="AI 응답",
+        timestamp=datetime.now()
+    )
 
-  return [_map_to_chat_message(i) for i in history]
 
-@app.get("/movies/{id}", response_model=MovieData)
-def get_movie_data(id: int, db: Session = Depends(get_db)):
-  data = db_find_movie_by_id(db, id)
-  if data is None:
-    raise HTTPException(status_code=404, detail="영화를 찾을 수 없음")
-  return _map_to_movie_data(data)
+# ---------------------------
+# /movies/{id}
+# ---------------------------
+@app.get("/api/movies/{id}", response_model=Movie)
+async def get_movie(id: int):
+    return Movie(
+        id=id,
+        title="영화 제목(TMDB-ko 기준)",
+        overview="영화 줄거리 요약",
+        wiki_document="wiki 줄거리",
+        release_date="2000-00-00 00:00:00",
+        poster_img_url="https://poster.example.com",
+        trailer_img_url="https://trailer.example.com",
+        rating=0,
+        ordering=0
+    )
 
-@app.get("/movies/bookmarked", response_model=list[MovieData])
-def get_bookmarked_movies(db: Session = Depends(get_db)):
-  data = db_get_bookmarked_movies(db)
-  return [_map_to_movie_data(i) for i in data]
 
-@app.post("/movies/bookmarked", response_model=MovieData)
-def add_bookmark(id: int, db: Session = Depends(get_db)):
-  try:
-    data = db_add_bookmark(db, id)
-    return _map_to_movie_data(data)
-  
-  except FileExistsError:
-    raise HTTPException(status_code=409, detail="이미 북마크 되었습니다.")
-  except FileNotFoundError:
-    raise HTTPException(status_code=404, detail="존재하지 않는 영화를 북마크할 수 없습니다.")
+# ---------------------------
+# /movies/bookmarked
+# ---------------------------
+@app.get("/api/movies/bookmarked", response_model=List[Movie])
+async def get_bookmarked():
+    return [
+        Movie(id=1, title="Bookmark Movie #1", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
+              poster_img_url="https://...", trailer_img_url="https://...", ordering=1),
+        Movie(id=2, title="Bookmark Movie #2", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
+              poster_img_url="https://...", trailer_img_url="https://...", ordering=2)
+    ]
 
-@app.post("/movies/bookmarked/{id}", response_model=None)
-def rm_bookmark(id: int, db: Session = Depends(get_db)):
-  try:
-    db_rm_bookmark(db, id)
-  except Exception:
-    raise HTTPException(status_code=404, detail="북마크 해제 실패")
 
-@app.post("/test/users/")
-def create_user(user: str, content: str, db: Session = Depends(get_db)):
-  user = User(
-    email="test@gmail.com",
-    password="test_password",
-    nickname="test_nickname"
-  )
-  db.add(user)
-  db.commit()
-  db.refresh(user)
-  return user
+@app.post("/api/movies/bookmarked", response_model=Movie)
+async def post_bookmark(payload: MovieIDRequest):
+    return Movie(
+        id=payload.id,
+        title="Bookmarked!",
+        overview="...",
+        wiki_document="...",
+        release_date="2000-00-00 00:00:00",
+        poster_img_url="https://poster.example.com",
+        trailer_img_url="https://trailer.example.com",
+        ordering=1
+    )
 
-@app.get("/test/users/")
-def get_users(db: Session = Depends(get_db)):
-  return db.query(User).all()
+
+@app.delete("/api/movies/bookmarked", response_model=Movie)
+async def delete_bookmark(payload: MovieIDRequest):
+    return Movie(
+        id=payload.id,
+        title="Bookmark Removed",
+        overview="...",
+        wiki_document="...",
+        release_date="2000-00-00 00:00:00",
+        poster_img_url="https://poster.example.com",
+        trailer_img_url="https://trailer.example.com",
+        ordering=1
+    )
+
+
+# ---------------------------
+# /movies/archive
+# ---------------------------
+@app.get("/api/movies/archive", response_model=List[Movie])
+async def get_archive():
+    return [
+        Movie(id=1, title="Archived Movie #1", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
+              poster_img_url="https://...", trailer_img_url="https://...", ordering=1, ranking=5),
+        Movie(id=2, title="Archived Movie #2", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
+              poster_img_url="https://...", trailer_img_url="https://...", ordering=2, ranking=3)
+    ]
+
+
+@app.post("/api/movies/archive", response_model=Movie)
+async def post_archive(payload: ArchiveRequest):
+    return Movie(
+        id=payload.id,
+        title="Archived!",
+        overview="...",
+        wiki_document="...",
+        release_date="2000-00-00 00:00:00",
+        poster_img_url="https://poster.example.com",
+        trailer_img_url="https://trailer.example.com",
+        ordering=1,
+        ranking=payload.ranking
+    )
+
+
+@app.delete("/api/movies/archive", response_model=Movie)
+async def delete_archive(payload: MovieIDRequest):
+    return Movie(
+        id=payload.id,
+        title="Archive Removed",
+        overview="...",
+        wiki_document="...",
+        release_date="2000-00-00 00:00:00",
+        poster_img_url="https://poster.example.com",
+        trailer_img_url="https://trailer.example.com",
+        ordering=1,
+        ranking=3
+    )
