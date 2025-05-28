@@ -1,6 +1,5 @@
 import { createBrowserRouter } from "react-router-dom";
 import Chat from "@/pages/Chat";
-import Bookmark from "@/pages/Bookmark";
 import History from "@/pages/History";
 
 const router = createBrowserRouter([
@@ -11,10 +10,6 @@ const router = createBrowserRouter([
   {
     path: "/:chatId",
     element: <Chat />,
-  },
-  {
-    path: "/bookmark",
-    element: <Bookmark />,
   },
   {
     path: "/history",

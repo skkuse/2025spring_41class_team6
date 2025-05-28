@@ -9,8 +9,8 @@ const ChatRoom = () => {
       {/* 북마크 버튼 */}
       <div className="flex justify-end p-6">
         <button
-          onClick={() => navigate("/bookmark")}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
+          onClick={() => navigate("/history")}
+          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition "
         >
           <BookmarkBorderIcon className="w-5 h-5" />
           <span className="text-sm font-medium">북마크</span>
