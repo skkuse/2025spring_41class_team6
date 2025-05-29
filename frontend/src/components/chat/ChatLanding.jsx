@@ -12,7 +12,7 @@ const ChatLanding = ({ mode = "normal" }) => {
     <div className="flex flex-1 flex-col items-center justify-center bg-white h-full">
       <div className="absolute top-6 right-6">
         <button
-          onClick={() => navigate("/bookmark")}
+          onClick={() => navigate("/history")}
           className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
         >
           <BookmarkBorderIcon className="w-5 h-5" />
