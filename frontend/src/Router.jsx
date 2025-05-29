@@ -15,6 +15,10 @@ const router = createBrowserRouter([
     path: "/history",
     element: <History />,
   },
+  {
+    path: "/history/:id",
+    element: <History />,
+  },
 ]);
 
 export default router;
