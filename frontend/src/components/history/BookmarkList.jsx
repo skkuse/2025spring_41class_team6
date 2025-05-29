@@ -1,6 +1,5 @@
 import MovieCard from "@/components/movie/MovieCard";
-import getMovies from "@/apis/getMovies";
-
+import { getMovies } from "@/apis/testApi";
 const BookmarkList = () => {
   const movies = getMovies();
   return (

@@ -1,6 +1,6 @@
 import React from "react";
 import MovieCard from "@/components/movie/MovieCard";
-import getMovies from "@/apis/getMovies";
+import { getMovies } from "@/apis/testApi";
 import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
 import ThumbDownAltOutlinedIcon from "@mui/icons-material/ThumbDownAltOutlined";
 
@@ -12,7 +12,6 @@ const WatchHistory = () => {
 
   return (
     <div className="p-8">
-      <h2 className="text-2xl font-bold mb-6">영화 기록</h2>
       {/* 좋아요 표시한 영화 */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-2">

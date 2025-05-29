@@ -1,12 +1,17 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useState } from "react";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import BookmarkList from "@/components/history/BookmarkList";
 import WatchHistory from "@/components/history/WatchHistory";
-
+import MovieDetail from "@/components/movie/MovieDetail";
 const History = () => {
   const navigate = useNavigate();
+  const { id } = useParams();
   const [activeTab, setActiveTab] = useState("bookmark");
+
+  const handleClose = () => {
+    navigate("/history");
+  };
 
   return (
     <div className="px-60 py-12 w-full min-h-screen bg-gray-50 relative">
@@ -44,6 +49,7 @@ const History = () => {
         {activeTab === "bookmark" ? "북마크한 영화" : "시청 기록"}
       </h3>
       {activeTab === "bookmark" ? <BookmarkList /> : <WatchHistory />}
+      <MovieDetail open={!!id} onClose={handleClose} id={id} />
     </div>
   );
 };
