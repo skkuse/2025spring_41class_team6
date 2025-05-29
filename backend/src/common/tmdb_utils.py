@@ -10,7 +10,7 @@ if sys.version_info < (3, 11):
 else:
   from typing import TypedDict, Required, NotRequired
 
-from backend.common.env import ENV_TMDB_API_KEY
+from common.env import ENV_TMDB_API_KEY
 
 tmdb.API_KEY = ENV_TMDB_API_KEY
 

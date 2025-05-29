@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 import wikipedia
 import sqlalchemy.dialects.sqlite as sqlite
 from typing import cast
-from datetime import date
+from datetime import date, datetime
 from sqlalchemy.inspection import inspect
 from pydantic import BaseModel
 
@@ -44,6 +44,51 @@ def db_create_new_user(db: Session, email: str, password: str, nickname: str):
   except:
     db.rollback()
     return None
+
+class UserInfoInternal(BaseModel):
+  id: int
+  email: str
+  nickname: str
+  password: str
+  created_at: datetime
+
+def db_find_user(db: Session, email: str) -> UserInfoInternal|None:
+  """email을 key로 DB에서 user 정보 불러옴"""
+  stmt = sql.select(m.User).where(m.User.email == email)
+  res = db.execute(stmt).scalar_one_or_none()
+  if res is not None:
+    # (type: ignore)는 pylance type 검사가 Column[T] -> T로 추론하는 것을 못해서 넣음
+    # cast()를 직접적으로 해주는 것에 대한 이득도 딱히 없고 이게 나은 듯
+    return UserInfoInternal(
+      id = res.id,              # type: ignore
+      email=email,
+      nickname=res.nickname,    # type: ignore
+      password=res.password,    # type: ignore
+      created_at=res.created_at # type: ignore
+    )
+  return None
+
+def db_find_user_by_id(db: Session, id: int) -> UserInfoInternal|None:
+  """id를 key로 DB에서 user 정보 불러옴"""
+  stmt = sql.select(m.User).where(m.User.id == id)
+  res = db.execute(stmt).scalar_one_or_none()
+  if res is not None:
+    # (type: ignore)는 pylance type 검사가 Column[T] -> T로 추론하는 것을 못해서 넣음
+    # cast()를 직접적으로 해주는 것에 대한 이득도 딱히 없고 이게 나은 듯
+    return UserInfoInternal(
+      id = res.id,              # type: ignore
+      email=res.email,          # type: ignore
+      nickname=res.nickname,    # type: ignore
+      password=res.password,    # type: ignore
+      created_at=res.created_at # type: ignore
+    )
+
+def db_find_user_with_password(db: Session, email: str, password: str) -> UserInfoInternal|None:
+  """email을 key로 DB에서 user 정보를 불러옴 + pw 검사"""
+  res = db_find_user(db, email)
+  if res is None or res.password != password:
+    return None
+  return res
 
 def db_make_new_chatroom(db: Session, user_id: int):
   doc = m.ChatRoom(

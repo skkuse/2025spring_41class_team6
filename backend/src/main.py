@@ -1,67 +1,26 @@
 from fastapi import FastAPI, Path, Body, Response, Request, HTTPException, status, Depends
 from datetime import datetime
 from api_schema import *
+from database.utils import *
+from common.env import *
+import auth
+from typing import cast
 
 app = FastAPI()
 
-# 모의 유저 DB
-mock_user_db = {
-    "test@example.com": {"id": 1, "email": "test@example.com", "password": "1234"},
-    "user2@example.com": {"id": 2, "email": "user2@example.com", "password": "abcd"},
-}
+app.include_router(auth.router)
 
-def get_current_user_id(request: Request):
-    user_id = request.cookies.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
-    return int(user_id)
-
-@app.get("/api/")
-async def root():
-    return {"test": "HTTP 418: I'm a teapot"}
-
-@app.post("/api/register")
-async def register_user(payload: RegisterRequest):
-    if payload.email in mock_user_db:
-        raise HTTPException(status_code=400, detail="User already exists")
-    new_id = max([u["id"] for u in mock_user_db.values()]) + 1
-    mock_user_db[payload.email] = {
-          "id": new_id,
-          "email": payload.email,
-          "password": payload.password,
-          "nickname": payload.nickname,
-      }
-    return {"message": "User registered", "user_id": new_id}
-
-@app.post("/api/login")
-async def login_user(payload: RegisterRequest, response: Response):
-    user = mock_user_db.get(payload.email)
-    if not user or user["password"] != payload.password:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    response.set_cookie(
-        key="user_id",
-        value=str(user["id"]),
-        httponly=True
-    )
-    return {"message": "Login successful", "user_id": user["id"]}
-
-
-@app.post("/api/logout")
-async def logout_user(response: Response):
-    response.delete_cookie(key="user_id")
-    return {"message": "Logged out"}
-
-from typing import cast
 
 @app.get("/api/user", response_model=UserInfoResponse)
-async def get_user_information(user_id: int = Depends(get_current_user_id)):
-    user_info = mock_user_db.get("user_id")
-    user_info = cast(dict, user_info)
+async def get_user_information(user_id: int = Depends(auth.get_current_user_id), db: Session = Depends(get_db)):
+    user = db_find_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(404, detail="User not found.")
+
     return UserInfoResponse(
         id = user_id,
-        email = user_info["email"],
-        nickname = user_info["nickname"]
+        email=user.email,
+        nickname=user.nickname
     )
 
 # ---------------------------

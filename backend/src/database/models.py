@@ -7,10 +7,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime, timezone
 from sqlalchemy.orm.attributes import flag_modified
-from common.env import ENV_PROJECT_ROOT
+from common.env import ENV_BACKEND_ROOT
 
 # SQLite 경로 지정 (상대경로 or 절대경로)
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{ENV_PROJECT_ROOT}/backend/database/moviechat.db"
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{ENV_BACKEND_ROOT}/src/database/moviechat.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}

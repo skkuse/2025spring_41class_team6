@@ -1,4 +1,17 @@
 # Moviechat README (for dev)
+## backend 서버 실행
+`.env` 설정 (backend 폴더에 있으면 됨)
+```
+BACKEND_ROOT=/**/2025spring_41class_team6/backend
+OPENAI_API_KEY=**
+TMDB_API_KEY=**
+OMDB_API_KEY=**
+```
+```bash
+cd backend/src # 소스 폴더로 이동
+uvicorn main:app --reload # 코드 자동반영이 필요하다면 --reload 옵션 주기
+```
+
 ## backend API end point
 frontend에서 backend로 요청을 보낼 수 있는 API입니다.  
 각 endpoint 경로 앞에 `api`을 붙여서 요청해주세요  
