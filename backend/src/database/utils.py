@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import wikipedia
 import sqlalchemy.dialects.sqlite as sqlite
-from typing import cast
+from typing import List, Optional, cast
 from datetime import date, datetime
 from sqlalchemy.inspection import inspect
 from pydantic import BaseModel
@@ -106,6 +106,28 @@ def db_make_new_chatroom(db: Session, user_id: int):
   except:
     db.rollback()
     return None
+
+class ChatRoomInfoInternal(BaseModel):
+  id: int
+  user_id: int
+  character_id: Optional[int]
+  title: str
+  created_at: datetime
+
+def db_get_user_chatrooms(db: Session, user_id: int) -> List[ChatRoomInfoInternal]:
+  """
+  get all chat room information owned by `user_id`.  
+  the `user_id` must be valid, since this does not check its validity
+  """
+  stmt = sql.select(m.ChatRoom).where(m.ChatRoom.user_id == user_id)
+  rooms = db.scalars(stmt).all()
+  return [ChatRoomInfoInternal(
+    id           = room.id, # type: ignore
+    user_id      = room.user_id, # type: ignore
+    character_id = room.character_id, # type: ignore
+    title        = room.title, # type: ignore
+    created_at   = room.created_at # type: ignore
+  ) for room in rooms]
 
 def db_append_chat_message(db: Session, room_id: int, usr: str, ai: str):
   doc = m.ChatHistory(

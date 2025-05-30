@@ -29,6 +29,10 @@ class ChatRoom(BaseModel):
     id: int
     title: str
 
+class ChatRoomList(BaseModel):
+    normal: List[ChatRoom]
+    immersive: List[ChatRoom]
+
 class ChatHistory(BaseModel):
     user_message: str
     ai_message: str

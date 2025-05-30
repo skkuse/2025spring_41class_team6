@@ -5,19 +5,11 @@ from common.env import ENV_API_SKIP_AUTH
 
 USER_ID_COOKIE_KEY = "user_id"
 
-# API_SKIP_AUTH가 설정되더라도 DB에 ID=1인 유저 정보는 필요함
-DEFAULT_USER_ID = 1 # API_SKIP_AUTH 시, cookie가 없을 때 자동 선택되는 user id
-
-def config_skip_auth():
-    return ENV_API_SKIP_AUTH == "1"
-
 def get_current_user_id(request: Request):
     user_id = request.cookies.get(USER_ID_COOKIE_KEY)
     if not user_id:
-        if not config_skip_auth():
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
-        else:
-            return DEFAULT_USER_ID
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
+
     return int(user_id)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])

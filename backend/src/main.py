@@ -10,15 +10,21 @@ app = FastAPI()
 
 app.include_router(auth.router)
 
-
-@app.get("/api/user", response_model=UserInfoResponse)
-async def get_user_information(user_id: int = Depends(auth.get_current_user_id), db: Session = Depends(get_db)):
+# auth.get_current_user_id를 오버라이드해서 login을 skip할 수 있음
+#
+# app.dependency_overrides[auth.get_current_user_id] = lambda req: 1
+# => 항상 ID=1 로 로그인됨
+# 또는 find_user_by_id 자체를 오버라이드해서 원하는 유저로 자동 login할 수 있음
+def find_user_by_id(user_id: int = Depends(auth.get_current_user_id), db: Session = Depends(get_db)):
     user = db_find_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(404, detail="User not found.")
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
+@app.get("/api/user", response_model=UserInfoResponse)
+async def get_user_information(user: UserInfoInternal = Depends(find_user_by_id)):
     return UserInfoResponse(
-        id = user_id,
+        id = user.id,
         email=user.email,
         nickname=user.nickname
     )
@@ -26,21 +32,27 @@ async def get_user_information(user_id: int = Depends(auth.get_current_user_id),
 # ---------------------------
 # /chatrooms
 # ---------------------------
-@app.get("/api/chatrooms")
-async def get_chatrooms():
+@app.get("/api/chatrooms", response_model=ChatRoomList)
+async def get_chatrooms(user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    rooms = db_get_user_chatrooms(db, user.id)
+    
     return {
         "normal": [
-            ChatRoom(id=1234, title="채팅방 이름"),
-            ChatRoom(id=356, title="채팅방 #2")
+            ChatRoom(id=room.id, title=room.title)
+            for room in rooms if room.character_id is None
         ],
         "immersive": [
-            ChatRoom(id=534566000, title="몰입형 대화 #1")
+            ChatRoom(id=room.id, title=room.title)
+            for room in rooms if room.character_id is not None
         ]
     }
 
 
 @app.post("/api/chatrooms", response_model=CreateChatroomResponse)
-async def create_chatroom(payload: CreateChatroomRequest):
+async def create_chatroom(payload: CreateChatroomRequest,
+                          user: UserInfoInternal = Depends(find_user_by_id),
+                          db: Session = Depends(get_db)):
+    db_make_new_chatroom(db, user.id)
     chats = []
     if payload.initial_message:
         chats.append(ChatHistory(
