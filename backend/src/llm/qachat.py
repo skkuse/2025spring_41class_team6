@@ -11,7 +11,7 @@ from langchain.chains import RetrievalQA
 from langchain.memory import ConversationSummaryBufferMemory
 
 
-from crawler import get_tmdb_overview, get_wikipedia_content, get_watcha_reviews
+from llm.crawler import get_tmdb_overview, get_wikipedia_content, get_watcha_reviews
 
 
 # --------------------- [1] 초기 설정 ---------------------
@@ -66,30 +66,45 @@ def extract_titles_with_llm(user_input: str) -> list[str]:
 
 
 # --------------------- [4] Chroma 데이터 로딩 ---------------------
+def _is_cached_on_chroma(title: str, db):
+    try:
+        existing_titles = {doc.metadata['title'] for doc in db.similarity_search("영화", k=50)}
+    except:
+        existing_titles = set()
+    return title in existing_titles
+
+def is_cached_on_chroma(title: str):
+    return _is_cached_on_chroma(title, get_chroma_shared())
+
+def _add_to_chroma(movie_name: str, overview: str, wiki: str, reviews: list[str], db):
+    joined_reviews = "\n\n".join(f"- {r}" for r in reviews)
+
+    combined = f"[영화 제목] {movie_name}\n\n[TMDB 줄거리]\n{overview}\n\n[Wikipedia 문서]\n{wiki}\n\n[왓챠 리뷰]\n{joined_reviews}"
+    doc = Document(page_content=combined, metadata={"title": movie_name})
+
+    splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    split_docs = splitter.split_documents([doc])
+    db.add_documents(split_docs)
+
+def add_to_chroma(title: str, tmdb_overview: str|None, wikipedia_content: str|None, watcha_reviews: list[str]):
+    if not tmdb_overview:
+        tmdb_overview = ""
+    if not wikipedia_content:
+        wikipedia_content = ""
+    _add_to_chroma(title, tmdb_overview, wikipedia_content, watcha_reviews, get_chroma_shared())
+     
 def load_data(titles, db):
     for movie_name in titles:
-        try:
-            existing_titles = {doc.metadata['title'] for doc in db.similarity_search("영화", k=50)}
-        except:
-            existing_titles = set()
-
-        if movie_name in existing_titles:
+        if _is_cached_on_chroma(movie_name, db):
             print(f"[스킵됨] '{movie_name}'은 이미 Chroma에 저장되어 있습니다.")
             return
 
         print(f"[저장됨] '{movie_name}'에 대해 새로 검색합니다.")
-
+        
         overview = get_tmdb_overview(movie_name)
         wiki = get_wikipedia_content(movie_name) or get_wikipedia_content(movie_name + " (영화)")
         reviews = get_watcha_reviews(movie_name, max_comments=20)
-        joined_reviews = "\n\n".join(f"- {r}" for r in reviews)
-
-        combined = f"[영화 제목] {movie_name}\n\n[TMDB 줄거리]\n{overview}\n\n[Wikipedia 문서]\n{wiki}\n\n[왓챠 리뷰]\n{joined_reviews}"
-        doc = Document(page_content=combined, metadata={"title": movie_name})
-
-        splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        split_docs = splitter.split_documents([doc])
-        db.add_documents(split_docs)
+        _add_to_chroma(movie_name, overview, wiki, reviews, db)
 
 # --------------------- [5] Chroma & Memory 설정 ---------------------
 _cached_chroma = None
@@ -104,6 +119,19 @@ def get_chroma_shared():
             embedding_function=embedding
         )
     return _cached_chroma
+
+def is_memory_on_cache(session_id):
+    return session_id in session_memories
+
+def load_memory(session_id: str, summary: str, messages: list):
+    memory = ConversationSummaryBufferMemory(
+        llm=ChatOpenAI(temperature=0),
+        return_messages=True,
+        max_token_limit=1000
+    )
+    memory.moving_summary_buffer= summary
+    memory.chat_memory.messages = messages
+    session_memories[session_id] = memory
 
 def get_memory(session_id):
     if session_id not in session_memories:

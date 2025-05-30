@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 class ChatRoomContext(BaseModel):
   session_id: str
-  
+  summary: str
 
 def orm_to_dict(obj):
     if obj is None: return None
@@ -90,7 +90,14 @@ def db_find_user_with_password(db: Session, email: str, password: str) -> UserIn
     return None
   return res
 
-def db_make_new_chatroom(db: Session, user_id: int):
+class ChatRoomInfoInternal(BaseModel):
+  id: int
+  user_id: int
+  character_id: Optional[int]
+  title: str
+  created_at: datetime
+
+def db_make_new_chatroom(db: Session, user_id: int) -> ChatRoomInfoInternal | None:
   doc = m.ChatRoom(
     user_id=user_id,
     character_id=None,
@@ -99,20 +106,16 @@ def db_make_new_chatroom(db: Session, user_id: int):
   db.add(doc)
   try:
     db.commit()
-    return {
-      "id": cast(int, doc.id),
-      "title": cast(str, doc.title)
-    }
+    return ChatRoomInfoInternal(
+      id = doc.id, # type: ignore
+      user_id = doc.user_id, # type: ignore
+      character_id = doc.character_id, # type: ignore
+      title= doc.title, # type: ignore
+      created_at=doc.created_at, # type: ignore
+    )
   except:
     db.rollback()
     return None
-
-class ChatRoomInfoInternal(BaseModel):
-  id: int
-  user_id: int
-  character_id: Optional[int]
-  title: str
-  created_at: datetime
 
 def db_get_user_chatrooms(db: Session, user_id: int) -> List[ChatRoomInfoInternal]:
   """
@@ -129,22 +132,46 @@ def db_get_user_chatrooms(db: Session, user_id: int) -> List[ChatRoomInfoInterna
     created_at   = room.created_at # type: ignore
   ) for room in rooms]
 
-def db_append_chat_message(db: Session, room_id: int, usr: str, ai: str):
+class ChatHistoryInternal(BaseModel):
+  id: int
+  room_id: int
+  user_chat: str
+  ai_chat: str
+  timestamp: datetime
+
+def db_append_chat_message(db: Session, room_id: int, usr_msg: str, ai_msg: str, summary: dict) -> ChatHistoryInternal|None:
+  import json
+
   doc = m.ChatHistory(
     room_id=room_id,
-    user_chat=usr,
-    ai_chat=ai
+    user_chat=usr_msg,
+    ai_chat=ai_msg,
   )
   db.add(doc)
+  
+  print(f"[db_append_chat_message] summary:\n{summary}\n\n")
   try:
+    stmt = sql.update(m.ChatRoom).where(m.ChatRoom.id == room_id).values(summary=json.dumps(summary))
+    db.execute(stmt)
     db.commit()
-    return orm_to_dict(doc)
+    return ChatHistoryInternal(
+      id=doc.id,
+      room_id=doc.room_id,
+      user_chat=doc.user_chat,
+      ai_chat=doc.ai_chat,
+      timestamp=doc.timestamp
+    )
   except:
     db.rollback()
     return None
 
 def db_get_chatroom_context(db: Session, room_id: int) -> ChatRoomContext:
-  raise NotImplementedError
+  stmt = sql.select(m.ChatRoom.summary).where(m.ChatRoom.id == room_id)
+  result = db.execute(stmt).scalar_one()
+  return ChatRoomContext(
+    session_id=str(room_id),
+    summary=result
+  )
 
 def db_update_chatroom_context(db: Session, response: dict, cxt: ChatRoomContext):
   raise NotImplementedError
@@ -176,7 +203,7 @@ def db_find_movies_by_tmdb_title(db: Session, title: str):
   movies = db.execute(stmt).scalars().all()
   return [orm_to_dict(m) for m in movies]
 
-def find_movies_by_alias(db: Session, title: str):
+def db_find_movies_by_alias(db: Session, title: str):
   stmt1= sql.select(m.Movie)\
     .join(m.MovieAlias, m.Movie.id == m.MovieAlias.movie_id)\
     .where(m.MovieAlias.aliased_name == title)
@@ -311,10 +338,10 @@ def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: 
     return None
   
   id = upsert_movie_with_tmdb(db, res)
-  print(type(id))
-  print(res["title"] != search["query"])
+  
   if not (id is None) and search["query"] != res["title"]:
-    print("?")
+    print(f"[update_movie_by_tmdb_search] alias {search['query']}를 추가합니다")
+
     doc = m.MovieAlias(movie_id=id, aliased_name=search["query"])
     db.add(doc)
     try:
@@ -322,7 +349,7 @@ def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: 
     except IntegrityError:
       db.rollback()
     
-  return id
+  return cast(int, id)
 
 # asdf = m.SessionLocal()
 # update_movie_by_tmdb_search(asdf, { "query": "기생충" })

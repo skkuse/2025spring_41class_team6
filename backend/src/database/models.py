@@ -111,6 +111,7 @@ class ChatRoom(Base):
     user_id       = Column(Integer, ForeignKey(fk(TABLE_USER)), nullable=False)
     character_id  = Column(Integer, ForeignKey(fk(TABLE_CHARACTER_PROFILE)))
     title         = Column(String, nullable=False)
+    summary       = Column(String, nullable=False, default="")
     created_at    = Column(DateTime(timezone=True), default=current_time)
     
 class ChatHistory(Base):

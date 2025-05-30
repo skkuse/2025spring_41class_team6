@@ -4,3 +4,4 @@ venv/
 .env
 **/*.db
 **/chroma_temp/
+**/chroma_data/
