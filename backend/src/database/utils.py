@@ -57,14 +57,12 @@ def db_find_user(db: Session, email: str) -> UserInfoInternal|None:
   stmt = sql.select(m.User).where(m.User.email == email)
   res = db.execute(stmt).scalar_one_or_none()
   if res is not None:
-    # (type: ignore)는 pylance type 검사가 Column[T] -> T로 추론하는 것을 못해서 넣음
-    # cast()를 직접적으로 해주는 것에 대한 이득도 딱히 없고 이게 나은 듯
     return UserInfoInternal(
-      id = res.id,              # type: ignore
+      id = res.id,              
       email=email,
-      nickname=res.nickname,    # type: ignore
-      password=res.password,    # type: ignore
-      created_at=res.created_at # type: ignore
+      nickname=res.nickname,    
+      password=res.password,    
+      created_at=res.created_at 
     )
   return None
 
@@ -73,14 +71,12 @@ def db_find_user_by_id(db: Session, id: int) -> UserInfoInternal|None:
   stmt = sql.select(m.User).where(m.User.id == id)
   res = db.execute(stmt).scalar_one_or_none()
   if res is not None:
-    # (type: ignore)는 pylance type 검사가 Column[T] -> T로 추론하는 것을 못해서 넣음
-    # cast()를 직접적으로 해주는 것에 대한 이득도 딱히 없고 이게 나은 듯
     return UserInfoInternal(
-      id = res.id,              # type: ignore
-      email=res.email,          # type: ignore
-      nickname=res.nickname,    # type: ignore
-      password=res.password,    # type: ignore
-      created_at=res.created_at # type: ignore
+      id = res.id,              
+      email=res.email,          
+      nickname=res.nickname,    
+      password=res.password,    
+      created_at=res.created_at 
     )
 
 def db_find_user_with_password(db: Session, email: str, password: str) -> UserInfoInternal|None:
@@ -107,11 +103,11 @@ def db_make_new_chatroom(db: Session, user_id: int) -> ChatRoomInfoInternal | No
   try:
     db.commit()
     return ChatRoomInfoInternal(
-      id = doc.id, # type: ignore
-      user_id = doc.user_id, # type: ignore
-      character_id = doc.character_id, # type: ignore
-      title= doc.title, # type: ignore
-      created_at=doc.created_at, # type: ignore
+      id = doc.id, 
+      user_id = doc.user_id, 
+      character_id = doc.character_id, 
+      title= doc.title, 
+      created_at=doc.created_at, 
     )
   except:
     db.rollback()
@@ -125,11 +121,11 @@ def db_get_user_chatrooms(db: Session, user_id: int) -> List[ChatRoomInfoInterna
   stmt = sql.select(m.ChatRoom).where(m.ChatRoom.user_id == user_id)
   rooms = db.scalars(stmt).all()
   return [ChatRoomInfoInternal(
-    id           = room.id, # type: ignore
-    user_id      = room.user_id, # type: ignore
-    character_id = room.character_id, # type: ignore
-    title        = room.title, # type: ignore
-    created_at   = room.created_at # type: ignore
+    id           = room.id, 
+    user_id      = room.user_id, 
+    character_id = room.character_id, 
+    title        = room.title, 
+    created_at   = room.created_at 
   ) for room in rooms]
 
 class ChatHistoryInternal(BaseModel):
@@ -138,6 +134,28 @@ class ChatHistoryInternal(BaseModel):
   user_chat: str
   ai_chat: str
   timestamp: datetime
+
+def db_get_chat_messages(db: Session, user_id: int, room_id: int) -> List[ChatHistoryInternal]:
+  """
+  get all chat histories in ChatRoom `room_id`. If the owner does not match the user information,
+  it returns an empty list.
+  """
+  stmt = (
+    sql.select(m.ChatHistory)
+    .join(m.ChatRoom, m.ChatHistory.room_id == m.ChatRoom.id)
+    .where(m.ChatHistory.room_id == room_id)
+    .where(m.ChatRoom.user_id == user_id)
+  )
+  result = db.execute(stmt).scalars().all()
+  return [ChatHistoryInternal(
+    id = chat.id,
+    room_id = chat.room_id,
+    user_chat = chat.user_chat,
+    ai_chat = chat.ai_chat,
+    timestamp = chat.timestamp
+  ) for chat in result]
+
+
 
 def db_append_chat_message(db: Session, room_id: int, usr_msg: str, ai_msg: str, summary: dict) -> ChatHistoryInternal|None:
   import json
@@ -265,10 +283,10 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
   result = db.execute(stmt0).scalar_one_or_none()
   if result:
     print("updating")
-    result.title          = cast(Column[str], tmdb_data["title"])
-    result.tmdb_overview  = cast(Column[str], tmdb_data["overview"])
-    result.release_date   = cast(Column[date], tmdb_data["release_date"])
-    result.poster_img_url = cast(Column[str], tmdb_data["poster_path"])
+    result.title          = tmdb_data["title"]
+    result.tmdb_overview  = tmdb_data["overview"]
+    result.release_date   = tmdb_data["release_date"]
+    result.poster_img_url = tmdb_data["poster_path"]
     db.commit()
     
     stmt1 = sql.delete(m.MovieGenre).where(m.MovieGenre.movie_id == result.id)

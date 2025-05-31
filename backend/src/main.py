@@ -67,7 +67,7 @@ async def create_chatroom(payload: CreateChatroomRequest,
         )
 
     # 초기 메시지가 있었다면 메시지를 AI에게 보내고 응답을 chats에 append하여 반환
-    response = send_message_to_qachat(db, room.id, payload.initial_message)
+    response = send_message_to_qachat(db, user.id, room.id, payload.initial_message)
     result = db_append_chat_message(db, room.id, payload.initial_message, response, get_summary_from_qachat(room.id))
     if result is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
@@ -88,16 +88,22 @@ async def create_chatroom(payload: CreateChatroomRequest,
 # /chatrooms/{room_id}/messages
 # ---------------------------
 @app.get("/api/chatrooms/{room_id}/messages", response_model=List[ChatHistory])
-async def get_messages(room_id: int = Path(...)):
-    return [
-        ChatHistory(user_message="안녕", ai_message="안녕하세요!", timestamp=datetime.now()),
-        ChatHistory(user_message="이 영화 어때?", ai_message="추천할게요!", timestamp=datetime.now())
-    ]
-
+async def get_messages(room_id: int,
+                       user: UserInfoInternal = Depends(find_user_by_id),
+                       db: Session = Depends(get_db)):
+    chats = db_get_chat_messages(db, user.id, room_id)
+    return [ChatHistory(
+        user_message=chat.user_chat,
+        ai_message=chat.ai_chat,
+        timestamp=chat.timestamp
+    ) for chat in chats]
 
 @app.post("/api/chatrooms/{room_id}/messages", response_model=ChatHistory)
-async def post_message(room_id: int, payload: MessageRequest, user: int = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    response = send_message_to_qachat(db, room_id, payload.content)
+async def post_message(room_id: int,
+                       payload: MessageRequest,
+                       user: UserInfoInternal= Depends(find_user_by_id),
+                       db: Session = Depends(get_db)):
+    response = send_message_to_qachat(db, user.id, room_id, payload.content)
     result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
     if result is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
@@ -107,7 +113,6 @@ async def post_message(room_id: int, payload: MessageRequest, user: int = Depend
         ai_message=result.ai_chat,
         timestamp=result.timestamp
     )
-
 
 # ---------------------------
 # /movies/{id}

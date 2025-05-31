@@ -14,7 +14,7 @@ def get_summary_from_qachat(room_id: int) -> dict:
     messages_dict = messages_to_dict(messages)
     return { "summary": summary, "messages": messages_dict }
 
-def send_message_to_qachat(db: Session, room_id: int, message: str) -> str:
+def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> str:
     """
     
     """
