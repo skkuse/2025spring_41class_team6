@@ -26,15 +26,26 @@ embedding = OpenAIEmbeddings()
 
 
 # --------------------- [2] 프롬프트 ---------------------
+
 title_extract_prompt = PromptTemplate.from_template("""
-다음 문장에서 영화 제목만 출력하세요. 다른 말은 하지 마세요. 만약 사용자가 물어본 영화 제목이 명확하지 않다면 다시 맞는지 물어보세요.
-특히 시리즈물이라면 몇 번 시리즈인지 확실하지 않을 때 사용자에게 명확히 물어보세요.
+다음 문장에서 언급된 영화 제목을 출력하세요. 
+특히 시리즈물이라면 몇 번 시리즈인지 숫자를 기반으로 명확히 구분해주세요.
 만일 영화 관련 내용이 아니라면 '없음'이라고 답변하세요.
 각 영화 제목은 , 로 구분하세요.
+각 영화에 대해 다음 정보를 포함하세요:
+
+- 영화 제목
+- 구분 가능한 키워드 또는 정보 (출시년도, 시리즈 번호, 넷플릭스/디즈니 등 플랫폼)
+
+출력 형식: 영화제목1 (키워드1), 영화제목2 (키워드2) ...
+
+예시:
+듄 (2021), 듄 2 (2024), 바비 (마고 로비 주연)
 
 문장: {user_input}
-영화 제목:
+영화 목록:
 """)
+
 title_chain = title_extract_prompt | llm
 
 response_prompt = PromptTemplate.from_template("""
@@ -42,7 +53,7 @@ response_prompt = PromptTemplate.from_template("""
 리뷰에 포함된 다양한 관점을 반영해 **토론하듯 풍부하게 설명**하세요.
 리뷰의 내용을 가져올 때는 왓챠피디아에서 가져온 내용이라는 것을 명시해주세요.
 질문이 아니면 자연스럽게 대화를 이어가세요.
-영화 추천이 질문으로 들어오면 이전 대화기록과 리뷰를 바탕으로 사용자가 본 적이 없는 비슷한 영화들을 추천해주세요.
+사용자가 영화를 추천해달라고 요청하면 이전 대화기록과 리뷰를 바탕으로 사용자가 본 적이 없는 비슷한 영화들을 추천해주세요.
 추천할 영화 리스트는 "[영화 추천 리스트] 영화제목1, 영화제목2, 영화제목3 ..."의 형식으로 대화의 맨 앞에 표시한 후 대화를 이어가 주세요. 
 
 {context}
@@ -51,21 +62,61 @@ response_prompt = PromptTemplate.from_template("""
 답변:
 """)
 
-# --------------------- [3] LLM 도우미 함수 ---------------------
-def extract_titles_with_llm(user_input: str) -> list[str]:
+# --------------------- [3] LLM 기반 영화 제목 추출 함수 ---------------------
+def extract_titles_and_metadata_with_llm(user_input: str) -> list[dict]:
     response = title_chain.invoke({"user_input": user_input})
-    raw_result = response.content.strip().strip('"').replace("\n", "")
-    
-    # '없음' 등 무효 응답 처리
-    if not raw_result or raw_result.lower() in {"없음", "해당 없음", "모름", "잘 모르겠음", "영화 아님"} or raw_result.startswith("죄송하지만"):
-        return []
-    
-    # 리스트로 변환
-    titles = [t.strip() for t in raw_result.split(",") if t.strip()]
-    return titles
+    raw_result = response.content.strip().replace("\n", "")
 
+    if not raw_result or raw_result.lower() in {"없음", "해당 없음", "모름", "영화 아님"}:
+        return []
+
+    # 결과 파싱: "듄 (2021), 바비 (마고 로비 주연)" 등에서 → [{title: "듄", keyword: "2021"}, ...]
+    entries = [e.strip() for e in raw_result.split(",") if e.strip()]
+    parsed = []
+    for entry in entries:
+        if "(" in entry and ")" in entry:
+            title, keyword = entry.split("(", 1)
+            parsed.append({"title": title.strip(), "keyword": keyword.strip(" )")})
+        else:
+            parsed.append({"title": entry.strip(), "keyword": ""})
+    return parsed
+
+def search_tmdb_movie(title: str, keyword: str = "") -> dict:
+    search = tmdb.Search()
+    response = search.movie(query=title)
+    results = response.get('results', [])
+
+    if not results:
+        return {}
+
+    # 키워드 필터링 우선 적용 (연도/키워드가 결과에 있는지)
+    if keyword:
+        for movie in results:
+            if keyword in (movie.get("release_date", "") or "") or keyword.lower() in movie.get("overview", "").lower():
+                return {
+                    "tmdb_id": movie["id"],
+                    "title": movie["title"],
+                    "release_date": movie.get("release_date", ""),
+                }
+                
+    movie = results[0]
+    return {
+        "tmdb_id": movie["id"],
+        "title": movie["title"],
+        "release_date": movie.get("release_date", ""),
+    }
+
+def get_validated_movies(user_input: str) -> list[dict]:
+    movie_infos = extract_titles_and_metadata_with_llm(user_input)
+    validated = []
+    for m in movie_infos:
+        movie = search_tmdb_movie(m["title"], m["keyword"])
+        if movie:
+            validated.append(movie)
+    return validated
 
 # --------------------- [4] Chroma 데이터 로딩 ---------------------
+
 def load_data(titles, db):
     for movie_name in titles:
         try:
@@ -141,14 +192,19 @@ def run_qa_mode():
         if user_input.lower() == "exit":
             break
 
-        movie_names = extract_titles_with_llm(user_input)
-        if movie_names:
+        validated_movies = get_validated_movies(user_input)
+        movie_titles = [m["title"] for m in validated_movies]
+
+        for m in validated_movies:
+            print(f"✔ {m['title']} ({m['release_date']}) → TMDB ID: {m['tmdb_id']}")
+            
+        if movie_titles:
             chroma = get_chroma_shared()
-            load_data(movie_names, chroma)
+            load_data(movie_titles, chroma)
         else:
             print("[안내] 영화 data loading 생략.")
 
-        qa_chain = get_qa_chain(session_id, target_titles=movie_names)
+        qa_chain = get_qa_chain(session_id, target_titles=movie_titles)
         result = qa_chain.invoke({"query": user_input})
 
         print("\n[답변]", result["result"])
