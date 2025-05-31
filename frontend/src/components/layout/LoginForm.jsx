@@ -1,4 +1,12 @@
+import { useState, useEffect } from "react";
+
 const LoginForm = () => {
+  const [activeTab, setActiveTab] = useState("login");
+
+  // useEffect(() => {
+  //   console.log(`Active tab changed to: ${activeTab}`);
+  // }, [activeTab]);
+
   return (
     <div className="flex flex-col justify-center items-center w-[400px] border-l bg-[#f9f9f9] px-10">
       <div className="w-full">
@@ -9,10 +17,24 @@ const LoginForm = () => {
 
         {/* Login / Sign in */}
         <div className="flex mb-4 border-b">
-          <button className="flex-1 text-center py-2 font-semibold border-b-2 border-black">
+          <button
+            className={`flex-1 text-center py-2 font-semibold border-b-2 border-black ${
+              activeTab === "login"
+                ? "border-black text-black"
+                : "border-transparent text-gray-500"
+            }`}
+            onClick={() => setActiveTab("login")}
+          >
             로그인
           </button>
-          <button className="flex-1 text-center py-2 text-gray-500">
+          <button
+            className={`flex-1 text-center py-2 font-semibold border-b-2 border-black ${
+              activeTab === "signup"
+                ? "border-black text-black"
+                : "border-transparent text-gray-500"
+            }`}
+            onClick={() => setActiveTab("signup")}
+          >
             회원가입
           </button>
         </div>
