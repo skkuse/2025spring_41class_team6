@@ -9,7 +9,43 @@ import sqlalchemy.dialects.sqlite as sqlite
 from typing import List, Optional, cast
 from datetime import date, datetime
 from sqlalchemy.inspection import inspect
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+class UserInfoInternal(BaseModel):
+  id: int
+  email: str
+  nickname: str
+  password: str
+  created_at: datetime
+  model_config = ConfigDict(from_attributes=True)
+
+class ChatRoomInfoInternal(BaseModel):
+  id: int
+  user_id: int
+  character_id: Optional[int]
+  title: str
+  created_at: datetime
+  model_config = ConfigDict(from_attributes=True)
+
+class ChatHistoryInternal(BaseModel):
+  id: int
+  room_id: int
+  user_chat: str
+  ai_chat: str
+  timestamp: datetime
+  model_config = ConfigDict(from_attributes=True)
+
+class MovieInfoInternal(BaseModel):
+  id: int
+  tmdb_id: int
+  title: str
+  tmdb_overview: Optional[str]
+  wiki_document: Optional[str]
+  release_date: Optional[date]
+  poster_img_url: Optional[str]
+  trailer_img_url: Optional[str]
+  last_update: datetime
+  model_config = ConfigDict(from_attributes=True)
 
 class ChatRoomContext(BaseModel):
   session_id: str
@@ -27,9 +63,6 @@ def get_db():
   finally:
     db.close()
 
-def update_moviechat_db(data):
-  raise NotImplementedError
-
 def db_create_new_user(db: Session, email: str, password: str, nickname: str):
   stmt = sql.select(m.User).where(m.User.email == email)
   res = db.execute(stmt).scalar_one_or_none()
@@ -45,25 +78,20 @@ def db_create_new_user(db: Session, email: str, password: str, nickname: str):
     db.rollback()
     return None
 
-class UserInfoInternal(BaseModel):
-  id: int
-  email: str
-  nickname: str
-  password: str
-  created_at: datetime
 
 def db_find_user(db: Session, email: str) -> UserInfoInternal|None:
   """email을 key로 DB에서 user 정보 불러옴"""
   stmt = sql.select(m.User).where(m.User.email == email)
   res = db.execute(stmt).scalar_one_or_none()
   if res is not None:
-    return UserInfoInternal(
-      id = res.id,              
-      email=email,
-      nickname=res.nickname,    
-      password=res.password,    
-      created_at=res.created_at 
-    )
+    return UserInfoInternal.model_validate(res)
+    # return UserInfoInternal(
+    #   id = res.id,              
+    #   email=email,
+    #   nickname=res.nickname,    
+    #   password=res.password,    
+    #   created_at=res.created_at 
+    # )
   return None
 
 def db_find_user_by_id(db: Session, id: int) -> UserInfoInternal|None:
@@ -71,13 +99,14 @@ def db_find_user_by_id(db: Session, id: int) -> UserInfoInternal|None:
   stmt = sql.select(m.User).where(m.User.id == id)
   res = db.execute(stmt).scalar_one_or_none()
   if res is not None:
-    return UserInfoInternal(
-      id = res.id,              
-      email=res.email,          
-      nickname=res.nickname,    
-      password=res.password,    
-      created_at=res.created_at 
-    )
+    return UserInfoInternal.model_validate(res)
+    # return UserInfoInternal(
+    #   id = res.id,              
+    #   email=res.email,          
+    #   nickname=res.nickname,    
+    #   password=res.password,    
+    #   created_at=res.created_at 
+    # )
 
 def db_find_user_with_password(db: Session, email: str, password: str) -> UserInfoInternal|None:
   """email을 key로 DB에서 user 정보를 불러옴 + pw 검사"""
@@ -85,13 +114,6 @@ def db_find_user_with_password(db: Session, email: str, password: str) -> UserIn
   if res is None or res.password != password:
     return None
   return res
-
-class ChatRoomInfoInternal(BaseModel):
-  id: int
-  user_id: int
-  character_id: Optional[int]
-  title: str
-  created_at: datetime
 
 def db_make_new_chatroom(db: Session, user_id: int) -> ChatRoomInfoInternal | None:
   doc = m.ChatRoom(
@@ -128,12 +150,6 @@ def db_get_user_chatrooms(db: Session, user_id: int) -> List[ChatRoomInfoInterna
     created_at   = room.created_at 
   ) for room in rooms]
 
-class ChatHistoryInternal(BaseModel):
-  id: int
-  room_id: int
-  user_chat: str
-  ai_chat: str
-  timestamp: datetime
 
 def db_get_chat_messages(db: Session, user_id: int, room_id: int) -> List[ChatHistoryInternal]:
   """
@@ -191,12 +207,6 @@ def db_get_chatroom_context(db: Session, room_id: int) -> ChatRoomContext:
     summary=result
   )
 
-def db_update_chatroom_context(db: Session, response: dict, cxt: ChatRoomContext):
-  raise NotImplementedError
-
-def db_get_chatroom_history(db: Session, room_id: int):
-  raise NotImplementedError
-
 def db_get_bookmarked_movies(db: Session):
   raise NotImplementedError
 
@@ -221,7 +231,7 @@ def db_find_movies_by_tmdb_title(db: Session, title: str):
   movies = db.execute(stmt).scalars().all()
   return [orm_to_dict(m) for m in movies]
 
-def db_find_movies_by_alias(db: Session, title: str):
+def db_find_movies_by_alias(db: Session, title: str) -> List[MovieInfoInternal]:
   stmt1= sql.select(m.Movie)\
     .join(m.MovieAlias, m.Movie.id == m.MovieAlias.movie_id)\
     .where(m.MovieAlias.aliased_name == title)
@@ -231,7 +241,7 @@ def db_find_movies_by_alias(db: Session, title: str):
   stmt = sql.select(m.Movie).join(union_cte, m.Movie.id == union_cte.c.id)
 
   movies = db.scalars(stmt).all()
-  return [orm_to_dict(m) for m in movies]
+  return [MovieInfoInternal.model_validate(movie) for movie in movies]
 
 # flush, commit 안 함
 def _upsert_genre(db: Session, genre: str):
@@ -245,30 +255,30 @@ def _upsert_genre(db: Session, genre: str):
   return doc
 
 def _upsert_director(db: Session, director: DirectorInfo):
-  stmt = sql.select(m.Director).where(m.Director.tmdb_id == director["person_id"])
+  stmt = sql.select(m.Director).where(m.Director.tmdb_id == director.person_id)
   result = db.execute(stmt).scalar_one_or_none()
   if result:
     return result
   
   doc = m.Director(
-    tmdb_id = director["person_id"],
-    name = director["name"],
-    original_name = director["original_name"],
-    profile_path = director["profile_path"]
+    tmdb_id = director.person_id,
+    name = director.name,
+    original_name = director.original_name,
+    profile_path = director.profile_path
   )
   db.add(doc)
   return doc
 
 def _upsert_platform(db: Session, platform: PlatformInfo):
-  stmt = sql.select(m.Platform).where(m.Platform.tmdb_id == platform["tmdb_id"])
+  stmt = sql.select(m.Platform).where(m.Platform.tmdb_id == platform.tmdb_id)
   result = db.execute(stmt).scalar_one_or_none()
   if result:
     return result
 
   doc = m.Platform(
-    tmdb_id = platform["tmdb_id"],
-    name = platform["name"],
-    logo_path = platform["logo_path"]
+    tmdb_id = platform.tmdb_id,
+    name = platform.name,
+    logo_path = platform.logo_path,
   )
   db.add(doc)
   return doc
@@ -276,17 +286,17 @@ def _upsert_platform(db: Session, platform: PlatformInfo):
 def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
   """
   TMDB에서 불러온 영화 정보를 MovieChat DB에 반영합니다  
-  DB 반영 실패시 None이 반환되며, 성공시 해당 id가 반환됩니다.
+  DB 반영 실패시 None이 반환되며, 성공시 해당 영화 정보가 반환됩니다.
   """
-  tmdb_id = tmdb_data["id"]
+  tmdb_id = tmdb_data.id
   stmt0 = sql.select(m.Movie).where(m.Movie.tmdb_id == tmdb_id)
   result = db.execute(stmt0).scalar_one_or_none()
   if result:
     print("updating")
-    result.title          = tmdb_data["title"]
-    result.tmdb_overview  = tmdb_data["overview"]
-    result.release_date   = tmdb_data["release_date"]
-    result.poster_img_url = tmdb_data["poster_path"]
+    result.title          = tmdb_data.title
+    result.tmdb_overview  = tmdb_data.overview
+    result.release_date   = tmdb_data.release_date
+    result.poster_img_url = tmdb_data.poster_path
     db.commit()
     
     stmt1 = sql.delete(m.MovieGenre).where(m.MovieGenre.movie_id == result.id)
@@ -301,16 +311,16 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
     print("inserting")
     doc = m.Movie(
       tmdb_id=tmdb_id,
-      title=tmdb_data["title"],
-      tmdb_overview=tmdb_data["overview"],
-      release_date=tmdb_data["release_date"],
-      poster_img_url=tmdb_data["poster_path"],
+      title=tmdb_data.title,
+      tmdb_overview=tmdb_data.overview,
+      release_date=tmdb_data.release_date,
+      poster_img_url=tmdb_data.poster_path,
     )
     db.add(doc)
 
-  pending_genres = [_upsert_genre(db, i) for i in tmdb_data["genres"]]
-  pending_directors = [_upsert_director(db, i) for i in tmdb_data["directors"]]
-  pending_platforms = [_upsert_platform(db, i) for i in tmdb_data["platforms"]]
+  pending_genres = [_upsert_genre(db, i) for i in tmdb_data.genres]
+  pending_directors = [_upsert_director(db, i) for i in tmdb_data.directors]
+  pending_platforms = [_upsert_platform(db, i) for i in tmdb_data.platforms]
   db.flush()
 
   movie_id = doc.id
@@ -326,7 +336,7 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
 
   try:
     db.commit()
-    return movie_id 
+    return MovieInfoInternal.model_validate(doc)
   except IntegrityError as e:
     db.rollback()
     print(e)
@@ -339,35 +349,46 @@ def update_movie_by_tmdb_id(db: Session, tmdb_id: int, lang: str = "ko"):
   존재하지 않거나, 실패 시 `None`을 반환합니다
   """
   res = tmdb_request_movie_bulk(identifier={"movie_id": tmdb_id, "lang": lang})
-  if res is None:
+  if len(res) == 0:
     return None
 
-  return upsert_movie_with_tmdb(db, res)
+  return upsert_movie_with_tmdb(db, res[0])
 
 def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: str = "ko"):
   """
   TMDB의 영화 정보를 MovieChat DB에 반영합니다.  
-  성공 시 해당 id를 반환합니다.  
-  존재하지 않거나, 실패 시 `None`을 반환합니다
+  db 반영에 성공한 영화 정보들의 list를 반환합니다.
+  query로 들어온 영화 제목이 '정식' title과 일치하지 않으면 alias로 등록됩니다.
   """
-  res = tmdb_request_movie_bulk(identifier={"search": search, "lang": lang})
-  if res is None:
-    print("못 찾음...")
-    return None
-  
-  id = upsert_movie_with_tmdb(db, res)
-  
-  if not (id is None) and search["query"] != res["title"]:
-    print(f"[update_movie_by_tmdb_search] alias {search['query']}를 추가합니다")
+  datas : List[MovieInfoInternal]= []
 
-    doc = m.MovieAlias(movie_id=id, aliased_name=search["query"])
-    db.add(doc)
-    try:
-      db.commit()
-    except IntegrityError:
-      db.rollback()
+  res = tmdb_request_movie_bulk(identifier={"search": search, "lang": lang})
+  if len(res) == 0:
+    print(f"[update_movie_by_tmdb_search] {search}에 대한 영화를 TMDB에서 찾을 수 없음")
+    return datas
+  
+  for movie in res:
+    data = upsert_movie_with_tmdb(db, movie)
+    if data is None:
+      continue
     
-  return cast(int, id)
+    datas.append(data)
+
+    possible_alias = search["query"]
+    if possible_alias != movie.title:
+      print(f"[update_movie_by_tmdb_search] {movie.title}의 다른 이름 {possible_alias}(을)를 추가합니다")
+
+      doc = m.MovieAlias(movie_id=data.id, aliased_name=possible_alias)
+      db.add(doc)
+      try:
+        db.commit()
+      except IntegrityError as e:
+        # 동시 다발적으로 동일한 alias를 추가하는 상황에서 발생할 수도 있는데,
+        # 이 경우는 단순히 rollback 해주면 됨.
+        print(f"[update_movie_by_tmdb_search] 경고: IntegrityError {e}")
+        db.rollback()
+    
+  return datas
 
 # asdf = m.SessionLocal()
 # update_movie_by_tmdb_search(asdf, { "query": "기생충" })
@@ -376,11 +397,6 @@ def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: 
 # update_movie_by_tmdb_search(asdf, { "query": "아이언맨 3" })
 # print(find_movies_by_alias(asdf, "기생충"))
 # asdf.close()
-
-
-def try_find_movies_by_alias(db: Session, fuzzy_title: str):
-  # search = tmdb.Search().movie(query=fuzzy_title)
-  pass
 
 # 북마킹 기능들
 def find_user_bookmarked(db: Session, user_id: int):

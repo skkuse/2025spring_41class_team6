@@ -31,24 +31,24 @@ def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str
                 continue
             
             # 2. Too bad it wasn't cached. It's time to look inside our DB...
-            db_data = db_find_movies_by_alias(db, title)
-            db_data = db_data[0] if db_data else None
+            movies_in_db = db_find_movies_by_alias(db, title)
             
             # 3. Seems like we didn't have any. We need to find it on the web
-            if not db_data:
-                id = update_movie_by_tmdb_search(db, search={ "query": title })
-                if id is None:
-                    print(f"[send_message_to_qachat] {title}을 TMDB에서 찾을 수 없음")
+            if len(movies_in_db) == 0:
+                movies_in_db = update_movie_by_tmdb_search(db, search={ "query": title })
+                if len(movies_in_db) == 0:
                     continue
-                else:
-                    db_data = cast(dict, db_find_movie_by_id(db, id))
-                
+            
+            # 여러 movie들이 TMDB에서 나올 수 있음
+            # TODO: 연도별 기반 매칭, IMDB 이용
+            movie = movies_in_db[0]
+
             db_data_modified = False
-            print(f"[send_message_to_qachat] db_data:\n{db_data}\n\n")
+            print(f"[send_message_to_qachat] db_data:\n{movie}\n\n")
             
             # 4. See if we have any outdated, or missing data in our DB
-            if not db_data.get("wiki_document"):
-                db_data["wiki_document"] = crawler.get_wikipedia_content(title)
+            if not movie.wiki_document:
+                movie.wiki_document = crawler.get_wikipedia_content(title)
                 db_data_modified = True
             
             # 5. we just crawl watcha reviews unconditionally for now...
@@ -59,7 +59,7 @@ def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str
                 pass
 
             # 7. Let's cache it
-            qachat.add_to_chroma(title, db_data["tmdb_overview"], db_data["wiki_document"], reviews)
+            qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews)
             print(f"[send_message_to_qachat] chroma에 {title}(이)가 캐시되었습니다")
 
     else:
