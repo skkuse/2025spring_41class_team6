@@ -136,7 +136,6 @@ def run_character_mode():
     print("\n[캐릭터 프롬프트]\n" + character_prompt)
 
     prompt_template = get_qa_chain_prompt(session_id)
-    chain = prompt_template | llm_router
 
     while True:
         user_input = input("\n입력 (종료하려면 'exit'): ")
