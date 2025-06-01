@@ -1,20 +1,28 @@
 import { createBrowserRouter } from "react-router-dom";
 import Chat from "@/pages/Chat";
-import Bookmark from "@/pages/Bookmark";
 import History from "@/pages/History";
+import MainPage from "@/pages/MainPage";
 
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <Chat />,
+    element: <MainPage />,
   },
   {
-    path: "/bookmark",
-    element: <Bookmark />,
+    path: "/:chatId",
+    element: <Chat />,
   },
   {
     path: "/history",
     element: <History />,
+  },
+  {
+    path: "/history/:id",
+    element: <History />,
+  },
+  {
+    path: "/main",
+    element: <MainPage />,
   },
 ]);
 
