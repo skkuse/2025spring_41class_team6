@@ -7,23 +7,19 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.chains import RetrievalQA
 from langchain.memory import ConversationSummaryBufferMemory
-
 
 from crawler import get_tmdb_overview, get_wikipedia_content, get_watcha_reviews
 
-
 # --------------------- [1] 초기 설정 ---------------------
 load_dotenv()
-tmdb.API_KEY = os.getenv("TMDB_API_KEY")
-openai_key = os.getenv("OPENAI_API_KEY")
+tmdb.API_KEY = os.environ.get("TMDB_API_KEY")
+openai_key = os.environ.get("OPENAI_API_KEY")
 if not tmdb.API_KEY or not openai_key:
     raise ValueError("API 키가 없습니다.")
 
 llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
 embedding = OpenAIEmbeddings()
-
 
 # --------------------- [2] 프롬프트 ---------------------
 title_extract_prompt = PromptTemplate.from_template("""
@@ -55,15 +51,12 @@ response_prompt = PromptTemplate.from_template("""
 def extract_titles_with_llm(user_input: str) -> list[str]:
     response = title_chain.invoke({"user_input": user_input})
     raw_result = response.content.strip().strip('"').replace("\n", "")
-    
-    # '없음' 등 무효 응답 처리
+
     if not raw_result or raw_result.lower() in {"없음", "해당 없음", "모름", "잘 모르겠음", "영화 아님"} or raw_result.startswith("죄송하지만"):
         return []
-    
-    # 리스트로 변환
+
     titles = [t.strip() for t in raw_result.split(",") if t.strip()]
     return titles
-
 
 # --------------------- [4] Chroma 데이터 로딩 ---------------------
 def load_data(titles, db):
@@ -114,26 +107,17 @@ def get_memory(session_id):
         )
     return session_memories[session_id]
 
-def get_qa_chain(session_id: str, target_titles: list[str] = None):
-    db = get_chroma_shared()
-    memory = get_memory(session_id)
+# --------------------- [6] 스트리밍 응답 처리 함수 ---------------------
+# 기존 RetrievalQA 체인을 사용하지 않고, context를 직접 구성한 뒤 ChatOpenAI(stream=True)로 토큰 단위 출력
+from typing import Iterator
 
-    search_kwargs = {"k": 10}
-    if target_titles:
-        search_kwargs["filter"] = {"title": {"$in": target_titles}}
+def stream_chat_response(prompt_text: str) -> Iterator[str]:
+    streaming_llm = ChatOpenAI(model="gpt-4o", temperature=0.7, streaming=True)
+    for chunk in streaming_llm.stream(prompt_text):
+        if hasattr(chunk, "content") and chunk.content:
+            yield chunk.content
 
-    retriever = db.as_retriever(search_kwargs=search_kwargs)
-
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        chain_type="stuff",
-        chain_type_kwargs={"prompt": response_prompt},
-        memory=memory,
-        return_source_documents=False
-    )
-
-# --------------------- [6] 메인 루프 ---------------------
+# --------------------- [7] 메인 루프 ---------------------
 def run_qa_mode():
     session_id = "session456"
     while True:
@@ -148,14 +132,24 @@ def run_qa_mode():
         else:
             print("[안내] 영화 data loading 생략.")
 
-        qa_chain = get_qa_chain(session_id, target_titles=movie_names)
-        result = qa_chain.invoke({"query": user_input})
+        db = get_chroma_shared()
+        memory = get_memory(session_id)
 
-        print("\n[답변]", result["result"])
+        search_kwargs = {"k": 10}
+        if movie_names:
+            search_kwargs["filter"] = {"title": {"$in": movie_names}}
+        retriever = db.as_retriever(search_kwargs=search_kwargs)
+
+        docs = retriever.get_relevant_documents(user_input)
+        context = "\n\n".join([doc.page_content for doc in docs])
+
+        full_prompt = response_prompt.format(context=context, question=user_input)
+
+        print("\n[답변] ", end="", flush=True)
+        for token in stream_chat_response(full_prompt):
+            print(token, end="", flush=True)
+        print()
 
         '''
-        memory = get_memory(session_id)
-        summary = memory.buffer
-        if summary:
-            print("\n[요약] 지금까지의 대화 요약:\n", summary)
+        memory.save_context({"input": user_input}, {"output": ""})
         '''

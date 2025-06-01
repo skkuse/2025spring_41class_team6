@@ -2,39 +2,34 @@ import os
 import tmdbsimple as tmdb
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_chroma import Chroma
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import LLMChain
 from langchain.memory import ConversationSummaryBufferMemory
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableMap, RunnablePassthrough
-import wikipedia
+from typing import Iterator
 from crawler import get_tmdb_overview, get_wikipedia_content
 
 tmdb.API_KEY = os.environ.get("TMDB_API_KEY")
 openai_key = os.environ.get("OPENAI_API_KEY") # 캐릭터 프롬프트 생성용
 openrouter_key = os.environ.get("OPEN_ROUTER_KEY") # 대화용
 
-'''
-if not tmdb.API_KEY or not openai_key or not openrouter_key:
-    raise ValueError("API 키가 없습니다.")
-'''
 embedding = OpenAIEmbeddings(openai_api_key=openai_key)
 
-# 캐릭터 프롬프트 생성용 LLM (OpenAI)
+# 캐릭터 프롬프트 생성용
 llm_openai = ChatOpenAI(
     model="gpt-4o",
     temperature=0.7,
     openai_api_key=openai_key
 )
 
-# 챗봇 대화용 LLM (OpenRouter)
+# 챗봇 대화용 LLM
 llm_router = ChatOpenAI(
     model="google/gemini-2.5-pro-preview",
     temperature=0.7,
     openai_api_key=openrouter_key,
-    openai_api_base="https://openrouter.ai/api/v1"
+    openai_api_base="https://openrouter.ai/api/v1",
+    streaming=True
 )
 
 character_prompt_template = PromptTemplate.from_template("""
@@ -63,7 +58,6 @@ character_prompt_template = PromptTemplate.from_template("""
 (여기에 생성된 요약 및 대화 예시를 넣어주세요)
 """)
 character_prompt_chain = LLMChain(prompt=character_prompt_template, llm=llm_openai)
-
 
 _cached_chroma = None
 session_memories = {}
@@ -103,10 +97,13 @@ def get_memory(session_id):
         )
     return session_memories[session_id]
 
-def get_qa_chain(session_id: str):
-    memory = get_memory(session_id)
-    character_prompt = session_prompts.get(session_id, "")
+def stream_chat_response(prompt_text: str) -> Iterator[str]:
+    for chunk in llm_router.stream(prompt_text):
+        if hasattr(chunk, "content") and chunk.content:
+            yield chunk.content
 
+def get_qa_chain_prompt(session_id: str):
+    character_prompt = session_prompts.get(session_id, "")
     full_prompt = ChatPromptTemplate.from_messages([
         ("system", f"""
 당신은 다음과 같은 인격과 말투를 가진 캐릭터로 응답합니다:
@@ -118,10 +115,9 @@ def get_qa_chain(session_id: str):
 """),
         ("user", "{question}")
     ])
+    return full_prompt
 
-    return full_prompt | llm_router
-
-#main
+# --------- 메인 루프 (스트리밍 출력) --------------
 def run_character_mode():
     session_id = "session456"
     db = get_chroma_shared()
@@ -139,19 +135,16 @@ def run_character_mode():
     session_prompts[session_id] = character_prompt
     print("\n[캐릭터 프롬프트]\n" + character_prompt)
 
+    prompt_template = get_qa_chain_prompt(session_id)
+    chain = prompt_template | llm_router
+
     while True:
         user_input = input("\n입력 (종료하려면 'exit'): ")
         if user_input.lower() == "exit":
             break
 
-        qa_chain = get_qa_chain(session_id)
-        result = qa_chain.invoke({"question": user_input})
-        print("\n[답변]", result.content)
-
-        '''
-        memory = get_memory(session_id)
-        summary = memory.buffer
-        if summary:
-            print("\n[요약] 지금까지의 대화 요약:\n", summary)
-        '''
-
+        full_prompt = prompt_template.format(question=user_input)
+        print("\n[답변] ", end="", flush=True)
+        for token in stream_chat_response(full_prompt):
+            print(token, end="", flush=True)
+        print()
