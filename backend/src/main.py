@@ -1,7 +1,9 @@
-from fastapi import FastAPI, Path, Body, Response, Request, HTTPException, status, Depends
+import asyncio
+from fastapi import FastAPI, Path, Body, Query, Response, Request, HTTPException, status, Depends
+from fastapi.responses import StreamingResponse
 from datetime import datetime
 from api_schema import *
-from llm_layer import get_summary_from_qachat, send_message_to_qachat
+from llm_layer import get_summary_from_qachat, send_message_to_qachat, stream_send_message_to_qachat
 from database.utils import *
 from common.env import *
 import auth
@@ -67,7 +69,7 @@ async def create_chatroom(payload: CreateChatroomRequest,
         )
 
     # 초기 메시지가 있었다면 메시지를 AI에게 보내고 응답을 chats에 append하여 반환
-    response = send_message_to_qachat(db, user.id, room.id, payload.initial_message)
+    response = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
     result = db_append_chat_message(db, room.id, payload.initial_message, response, get_summary_from_qachat(room.id))
     if result is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
@@ -98,21 +100,42 @@ async def get_messages(room_id: int,
         timestamp=chat.timestamp
     ) for chat in chats]
 
-@app.post("/api/chatrooms/{room_id}/messages", response_model=ChatHistory)
+@app.post("/api/chatrooms/{room_id}/messages", response_model=ChatHistory, response_description="""
+`room_id`의 대화방에 메시지를 보낸 뒤, 그 응답을 ChatHistory의 형태로 불러옵니다.  
+만약 stream=true 라면, text/event-stream 형식으로 스트리밍됩니다. 프론트에서 유의해서 작업해주세요
+""")
 async def post_message(room_id: int,
-                       payload: MessageRequest,
+                       payload: MessageRequest = Body(...),
+                       stream: bool = Query(False, description="true 시 SSE를 통한 스트리밍 응답"),
                        user: UserInfoInternal= Depends(find_user_by_id),
                        db: Session = Depends(get_db)):
-    response = send_message_to_qachat(db, user.id, room_id, payload.content)
-    result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
-    if result is None:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
+    
+    if not stream:
+        response = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
+        if result is None:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
 
-    return ChatHistory(
-        user_message=result.user_chat,
-        ai_message=result.ai_chat,
-        timestamp=result.timestamp
-    )
+        return ChatHistory(
+            user_message=result.user_chat,
+            ai_message=result.ai_chat,
+            timestamp=result.timestamp
+        )
+    else:
+        async def event_generator():
+            full_answer = ""
+            async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
+                full_answer += chunk
+                yield f"data: {chunk}\n\n"
+        
+            result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
+            if result is None:
+                print("something went wrong...")
+        
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream"
+        )
 
 # ---------------------------
 # /movies/{id}

@@ -14,17 +14,32 @@ def get_summary_from_qachat(room_id: int) -> dict:
     messages_dict = messages_to_dict(messages)
     return { "summary": summary, "messages": messages_dict }
 
-def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> str:
+async def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> str:
+    full_answer = ""
+    async for content in stream_send_message_to_qachat(db, user_id, room_id, message):
+        full_answer += content
+
+    return full_answer
+
+def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
     """
     
     """
     message = _preprocess_user_input(message)
-    titles = qachat.extract_titles_with_llm(message)
-    if titles:
-        print(f"[send_message_to_qachat] 감지된 영화 제목: {titles}")
+    titles = []
+    hints = qachat.extract_titles_and_metadata_with_llm(message)
+    if hints:
+        print(f"[send_message_to_qachat] 감지된 영화 제목: {hints}")
         
         # llm.qachat.load_data 로직 + Moviechat DB 저장
-        for title in titles:
+        for hint in hints:
+            title = hint.get("title")
+            keyword = hint.get("keyword")
+            assert(title)
+            if keyword is None:
+                keyword = ""
+            
+            titles.append(title)
             
             # 1. Let's see if it is cached on chroma
             if qachat.is_cached_on_chroma(title):
@@ -35,7 +50,7 @@ def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str
             
             # 3. Seems like we didn't have any. We need to find it on the web
             if len(movies_in_db) == 0:
-                movies_in_db = update_movie_by_tmdb_search(db, search={ "query": title })
+                movies_in_db = update_movie_by_tmdb_search(db, search={ "query": title, "primary_release_year": keyword })
                 if len(movies_in_db) == 0:
                     continue
             
@@ -54,7 +69,7 @@ def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str
             # 5. we just crawl watcha reviews unconditionally for now...
             reviews = crawler.get_watcha_reviews(title)
             
-            # 6. we should update our DB if it was modified(not yet implemented)
+            # 6. TODO: we should update our DB if it was modified(not yet implemented)
             if db_data_modified:
                 pass
 
@@ -78,7 +93,5 @@ def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str
             messages = messages_from_dict(context["messages"])
             qachat.load_memory(session_id, summary, messages)
 
-    qa_chain = qachat.get_qa_chain(session_id, target_titles=titles)
-    result = qa_chain.invoke({ "query": message })
-    return result["result"]
-
+    # 야! 신난다!
+    return qachat.get_streamed_messages(session_id, titles, message)

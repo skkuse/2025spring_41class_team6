@@ -66,6 +66,9 @@ response_prompt = PromptTemplate.from_template("""
 def extract_titles_and_metadata_with_llm(user_input: str) -> list[dict]:
     response = title_chain.invoke({"user_input": user_input})
     raw_result = response.content.strip().replace("\n", "")
+    print("[extract_titles...] " + user_input)
+    print("[extract_titles...] " + response.content.strip())
+    print("[extract_titles...] " + raw_result)
 
     if not raw_result or raw_result.lower() in {"없음", "해당 없음", "모름", "영화 아님"}:
         return []
@@ -249,3 +252,43 @@ def run_qa_mode():
         summary = memory.buffer
         #if summary:
         #    print("\n[요약] 지금까지의 대화 요약:\n", summary)
+
+# llm_layer에서 사용하는 함수입니다.
+# run_qa_mode의 로직을 일부 사용하며, 비동기적으로 user에게 message를 전달하는 역할을 합니다.
+# run_qa_mode와 사실 상 동일한 중복 코드이나, 혼란을 방지하기 위해 run_qa_mode는 남겨놓았습니다.
+# 만약 변경 사항이 있다면, run_qa_mode말고 여기를 고쳐 주세요
+# 그리고 웬만하면 입력 parameter랑 return 형식을 바꾸지 말아주세요
+def get_streamed_messages(session_id: str, movie_titles: list[str], user_input: str):
+
+    db = get_chroma_shared()
+    memory = get_memory(session_id)
+
+    search_kwargs = {"k": 10}
+    if movie_titles:
+        search_kwargs["filter"] = {"title": {"$in": movie_titles}}
+    retriever = db.as_retriever(search_kwargs=search_kwargs)
+
+    docs = retriever.get_relevant_documents(user_input)
+    context = "\n\n".join([doc.page_content for doc in docs]) or "관련된 문서를 찾을 수 없습니다."
+    print("[get_streamed...] " + context)
+
+    summary = memory.buffer or "(요약 없음)"
+    full_prompt = response_prompt.format(history=summary, context=context, question=user_input)
+    
+    return _stream_response_generator(user_input, full_prompt, memory)
+
+import json
+
+async def _stream_response_generator(user_input: str, prompt: str, memory):
+    full_answer = ""
+    streaming_llm = ChatOpenAI(model="gpt-4o", temperature=0.7, streaming=True)
+    for chunk in streaming_llm.stream(prompt):
+        if hasattr(chunk, "content") and chunk.content:
+            content = (
+                chunk.content if isinstance(chunk.content, str)
+                else json.dumps(chunk.content, ensure_ascii=False)
+            )
+            full_answer += content
+            yield content
+
+    memory.save_context({"input": user_input}, {"output": full_answer})
