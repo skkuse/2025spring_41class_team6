@@ -1,10 +1,11 @@
 import { FaPlus, FaRegCommentDots } from "react-icons/fa";
 import { useState } from "react";
 import useChatroomsList from "@/hooks/chat/useChatroomsList";
+import { useNavigate } from "react-router-dom";
 
 const Sidebar = () => {
   const [mode, setMode] = useState("normal"); // "normal" 또는 "immersive"
-
+  const navigate = useNavigate();
   const { data: chatrooms, isLoading } = useChatroomsList();
 
   if (isLoading) {
@@ -40,7 +41,10 @@ const Sidebar = () => {
         </button>
       </div>
       {/* 새 대화 버튼 */}
-      <button className="flex items-center justify-center gap-2 w-full py-3 mb-6 bg-white border border-[#ececec] rounded-lg text-sm font-medium hover:bg-gray-100 transition">
+      <button
+        onClick={() => navigate("/chat")}
+        className="flex items-center justify-center gap-2 w-full py-3 mb-6 bg-white border border-[#ececec] rounded-lg text-sm font-medium hover:bg-gray-100 transition"
+      >
         <FaPlus className="text-gray-500" />새 대화
       </button>
       {/* 대화 컨텍스트 목록 */}
@@ -50,6 +54,7 @@ const Sidebar = () => {
             <div
               key={conversation.id}
               className="flex items-center gap-2 px-3 py-3 rounded-lg text-gray-700 text-sm cursor-pointer hover:bg-gray-200 transition mb-2"
+              onClick={() => navigate(`/chat/${conversation.id}`)}
             >
               <FaRegCommentDots className="text-lg text-gray-400" />
               {conversation.title}

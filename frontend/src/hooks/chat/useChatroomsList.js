@@ -3,7 +3,7 @@ import getChatrooms from "@/apis/chat/getChatrooms";
 
 const useChatroomsList = () => {
   return useQuery({
-    queryKey: ["chatrooms"],
+    queryKey: ["chatroomList"],
     queryFn: () => getChatrooms(),
   });
 };
