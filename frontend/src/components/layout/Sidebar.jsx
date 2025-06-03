@@ -1,18 +1,18 @@
 import { FaPlus, FaRegCommentDots } from "react-icons/fa";
 import { useState } from "react";
+import useChatroomsList from "@/hooks/chat/useChatroomsList";
 
 const Sidebar = () => {
   const [mode, setMode] = useState("normal"); // "normal" 또는 "immersive"
 
-  const normalConversations = [
-    { id: 1, title: "영화 추천 받기" },
-    { id: 2, title: "영화 분석하기" },
-  ];
+  const { data: chatrooms, isLoading } = useChatroomsList();
 
-  const immersiveConversations = [
-    { id: 1, title: "영화 시나리오 작성" },
-    { id: 2, title: "영화 캐릭터 분석" },
-  ];
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  const normalConversations = chatrooms.normal;
+  const immersiveConversations = chatrooms.immersive;
 
   return (
     <div className="w-72 bg-[#f5f6fa] border-r border-[#ececec] p-6 flex flex-col min-h-0 rounded-r-xl">
