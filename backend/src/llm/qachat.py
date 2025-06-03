@@ -45,6 +45,9 @@ title_extract_prompt = PromptTemplate.from_template("""
 title_chain = title_extract_prompt | llm
 
 response_prompt = PromptTemplate.from_template("""
+이전 대화 요약:
+{history}
+
 아래의 영화 정보와 리뷰들을 참고해 사용자 질문에 답하세요.
 리뷰에 포함된 다양한 관점을 반영해 **토론하듯 풍부하게 설명**하세요.
 리뷰의 내용을 가져올 때는 왓챠피디아에서 가져온 내용이라는 것을 명시해주세요.
@@ -191,7 +194,7 @@ def run_qa_mode():
         else:
             print("[안내] 영화 data loading 생략.")
 
-        # ✅ 충돌 해결: 스트리밍 구조 기준으로 db/memory 가져오고 retriever 구성
+        # 충돌 해결: 스트리밍 구조 기준으로 db/memory 가져오고 retriever 구성
         db = get_chroma_shared()
         memory = get_memory(session_id)
 
