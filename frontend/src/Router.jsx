@@ -1,11 +1,12 @@
 import { createBrowserRouter } from "react-router-dom";
 import Chat from "@/pages/Chat";
 import History from "@/pages/History";
+import MainPage from "@/pages/MainPage";
 
 const router = createBrowserRouter([
   {
     path: "/",
-    element: <Chat />,
+    element: <MainPage />,
   },
   {
     path: "/:chatId",
@@ -18,6 +19,10 @@ const router = createBrowserRouter([
   {
     path: "/history/:id",
     element: <History />,
+  },
+  {
+    path: "/main",
+    element: <MainPage />,
   },
 ]);
 
