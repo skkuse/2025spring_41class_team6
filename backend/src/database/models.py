@@ -75,14 +75,14 @@ def auto_update_last_modified(mapper, connection, target: Movie):
 
 class BookmarkedMovie(Base):
     __tablename__ = TABLE_BOOKMARKED_MOVIE
-    movie_id   : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE)), primary_key=True)
-    user_id    : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_USER)),  primary_key=True)
+    movie_id   : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True)
+    user_id    : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_USER), ondelete="CASCADE"),  primary_key=True)
     created_at : Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=current_time)
 
 class ArchivedMovie(Base):
     __tablename__ = TABLE_ARCHIVED_MOVIE
-    movie_id   : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE)), primary_key=True)
-    user_id    : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_USER)),  primary_key=True)
+    movie_id   : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True)
+    user_id    : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_USER), ondelete="CASCADE"),  primary_key=True)
     rating     : Mapped[int]      = mapped_column(nullable=False)
     created_at : Mapped[datetime] = mapped_column(DateTime(timezone=True), default=current_time)
 
@@ -97,8 +97,8 @@ class Director(Base):
 class ChatRoom(Base):
     __tablename__ = TABLE_CHAT_ROOM
     id           : Mapped[int]      = mapped_column(primary_key=True, index=True, autoincrement=True)
-    user_id      : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_USER)), nullable=False)
-    character_id : Mapped[Optional[int]] = mapped_column(ForeignKey(fk(TABLE_CHARACTER_PROFILE)))
+    user_id      : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_USER), ondelete="CASCADE"), nullable=False)
+    character_id : Mapped[Optional[int]] = mapped_column(ForeignKey(fk(TABLE_CHARACTER_PROFILE), ondelete="SET NULL"))
     title        : Mapped[str]      = mapped_column(nullable=False)
     summary      : Mapped[str]      = mapped_column(nullable=False, default="")
     created_at   : Mapped[datetime] = mapped_column(DateTime(timezone=True), default=current_time)
@@ -106,7 +106,7 @@ class ChatRoom(Base):
 class ChatHistory(Base):
     __tablename__ = TABLE_CHAT_HISTORY
     id        : Mapped[int]      = mapped_column(primary_key=True, index=True, autoincrement=True)
-    room_id   : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_CHAT_ROOM)))
+    room_id   : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_CHAT_ROOM), ondelete="CASCADE"))
     ai_chat   : Mapped[str]      = mapped_column(nullable=False)
     user_chat : Mapped[str]      = mapped_column(nullable=False)
     timestamp : Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=current_time)
@@ -114,7 +114,7 @@ class ChatHistory(Base):
 class CharacterProfile(Base):
     __tablename__ = TABLE_CHARACTER_PROFILE
     id             : Mapped[int]      = mapped_column(primary_key=True, index=True, autoincrement=True)
-    movie_id       : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE)), nullable=False)
+    movie_id       : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), nullable=False)
     name           : Mapped[str]      = mapped_column(nullable=False)
     description    : Mapped[str]      = mapped_column(nullable=False)
     tone           : Mapped[str]      = mapped_column(nullable=False)
@@ -139,27 +139,27 @@ class Platform(Base):
 
 class MovieAlias(Base):
     __tablename__ = TABLE_MOVIE_ALIAS
-    movie_id     : Mapped[int]  = mapped_column(ForeignKey(fk(TABLE_MOVIE)), nullable=False, primary_key=True)
+    movie_id     : Mapped[int]  = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), nullable=False, primary_key=True)
     aliased_name : Mapped[str]  = mapped_column(nullable=False, primary_key=True)
 
 class MovieGenre(Base):
     __tablename__ = REL_MOVIE_GENRE
-    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE)), primary_key=True, nullable=False)
-    genre_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_GENRE)), primary_key=True, nullable=False)
+    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True, nullable=False)
+    genre_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_GENRE), ondelete="CASCADE"), primary_key=True, nullable=False)
 
 class MovieActor(Base):
     __tablename__ = REL_MOVIE_ACTOR
-    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE)), primary_key=True, nullable=False)
-    actor_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_ACTOR)), primary_key=True, nullable=False)
+    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True, nullable=False)
+    actor_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_ACTOR), ondelete="CASCADE"), primary_key=True, nullable=False)
 
 class MoviePlatform(Base):
     __tablename__ = REL_MOVIE_PLATFORM
-    movie_id    : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE)),    primary_key=True, nullable=False)
-    platform_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_PLATFORM)), primary_key=True, nullable=False)
+    movie_id    : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE),    ondelete="CASCADE"),    primary_key=True, nullable=False)
+    platform_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_PLATFORM), ondelete="CASCADE"), primary_key=True, nullable=False)
 
 class MovieDirector(Base):
     __tablename__ = REL_MOVIE_DIRECTOR
-    movie_id    : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE)),    primary_key=True, nullable=False)
-    director_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_DIRECTOR)), primary_key=True, nullable=False)
+    movie_id    : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE),    ondelete="CASCADE"), primary_key=True, nullable=False)
+    director_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_DIRECTOR), ondelete="CASCADE"), primary_key=True, nullable=False)
 
 Base.metadata.create_all(bind=engine)

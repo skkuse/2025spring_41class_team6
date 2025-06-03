@@ -270,7 +270,6 @@ def get_streamed_messages(session_id: str, movie_titles: list[str], user_input: 
 
     docs = retriever.get_relevant_documents(user_input)
     context = "\n\n".join([doc.page_content for doc in docs]) or "관련된 문서를 찾을 수 없습니다."
-    print("[get_streamed...] " + context)
 
     summary = memory.buffer or "(요약 없음)"
     full_prompt = response_prompt.format(history=summary, context=context, question=user_input)

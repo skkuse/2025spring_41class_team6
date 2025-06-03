@@ -150,6 +150,26 @@ def db_get_user_chatrooms(db: Session, user_id: int) -> List[ChatRoomInfoInterna
     created_at   = room.created_at 
   ) for room in rooms]
 
+def db_delete_user_chatroom(db: Session, room_id: int, user_id: int) -> bool:
+  """
+  delete user chatroom from the database
+  the `user_id` must own the `room_id`.  
+  Otherwise, this function fails. (it does nothing when it fails)
+  """
+  stmt = (
+    sql.delete(m.ChatRoom)
+    .where(m.ChatRoom.user_id == user_id)
+    .where(m.ChatRoom.id == room_id)
+  )
+
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
 
 def db_get_chat_messages(db: Session, user_id: int, room_id: int) -> List[ChatHistoryInternal]:
   """

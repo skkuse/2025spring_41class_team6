@@ -3,18 +3,30 @@ import llm.crawler as crawler
 from database.utils import *
 import json
 from langchain.schema import messages_to_dict, messages_from_dict
+from typing import TypedDict
 
-def _preprocess_user_input(user_input: str) -> str:
-    return user_input
+class SummaryType(TypedDict):
+    """
+    대화방의 대화 내역의 필요한 정보를 담고 있는 opaque type
+    """
+    summary: str
+    messages: list[dict]
 
-def get_summary_from_qachat(room_id: int) -> dict:
+def get_summary_from_qachat(room_id: int) -> SummaryType:
     memory = qachat.get_memory(str(room_id))
     summary = memory.moving_summary_buffer
     messages = memory.chat_memory.messages
     messages_dict = messages_to_dict(messages)
     return { "summary": summary, "messages": messages_dict }
 
+def _preprocess_user_input(user_input: str) -> str:
+    return user_input
+
 async def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> str:
+    """
+    message를 AI agent에게 전송하고, 그 응답을 하나의 string으로 반환합니다.  
+    비동기 함수이기 때문에 응답을 받을 때는 `await`를 사용해주세요.
+    """
     full_answer = ""
     async for content in stream_send_message_to_qachat(db, user_id, room_id, message):
         full_answer += content
@@ -23,7 +35,7 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
 
 def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
     """
-    
+    message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
     """
     message = _preprocess_user_input(message)
     titles = []
@@ -84,14 +96,17 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
     session_id = str(room_id)
 
     if not qachat.is_memory_on_cache(session_id):
-        print(f"[send_message_to_qachat] session을 LOAD합니다")
+        print(f"[send_message_to_qachat] session cache가 비어있습니다")
         context = db_get_chatroom_context(db, room_id).summary
         if context:
+            print(f"[send_message_to_qachat] session 정보를 DB에서 불러옵니다")
             print(f"context: {context}")
-            context = json.loads(context)
+            context = cast(SummaryType, json.loads(context))
             summary = context["summary"]
             messages = messages_from_dict(context["messages"])
             qachat.load_memory(session_id, summary, messages)
+        else:
+            print("session 정보가 없습니다. 새로운 context를 생성합니다.")
 
     # 야! 신난다!
     return qachat.get_streamed_messages(session_id, titles, message)

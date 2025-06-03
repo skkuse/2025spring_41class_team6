@@ -33,6 +33,12 @@ async def get_user_information(user: UserInfoInternal = Depends(find_user_by_id)
         nickname=user.nickname
     )
 
+@app.get("/api/test")
+async def test():
+    import llm.qachat as qachat
+    print(qachat.session_memories)
+
+
 # ---------------------------
 # /chatrooms
 # ---------------------------
@@ -85,6 +91,15 @@ async def create_chatroom(payload: CreateChatroomRequest,
         title = room.title,
         chats = chats
     )
+
+@app.delete("/api/chatrooms", response_model=DeleteChatroomResponse)
+async def delete_chatroom(payload: ChatroomIDRequest,
+                          user: UserInfoInternal = Depends(find_user_by_id),
+                          db: Session = Depends(get_db)):
+    if db_delete_user_chatroom(db, payload.id, user.id):
+        return DeleteChatroomResponse(id=payload.id)
+    else:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="db removal failed")
 
 # ---------------------------
 # /chatrooms/{room_id}/messages

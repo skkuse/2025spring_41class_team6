@@ -46,6 +46,12 @@ class CreateChatroomResponse(BaseModel):
     title: str
     chats: List[ChatHistory]
 
+class ChatroomIDRequest(BaseModel):
+    id: int
+
+class DeleteChatroomResponse(BaseModel):
+    id: int
+
 class MessageRequest(BaseModel):
     content: str
 

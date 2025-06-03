@@ -110,8 +110,8 @@ def tmdb_request_movie_bulk(identifier: TmdbSearchOpt) -> List[TmdbRequestResult
       directors = tmdb_parse_directors(credits),
       platforms = tmdb_parse_platforms(kr_providers),
       external_ids = ExternalIdInfo(
-        imdb = externals["imdb_id"],
-        wikidata = externals["wikidata_id"]
+        imdb = externals.get("imdb_id"),
+        wikidata = externals.get("wikidata_id")
       )
     )
     movie_data.append(data)

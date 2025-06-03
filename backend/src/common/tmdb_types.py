@@ -52,8 +52,8 @@ class PlatformInfo(BaseModel):
     logo_path: Optional[str]
 
 class ExternalIdInfo(BaseModel):
-   imdb: str
-   wikidata: str
+   imdb: Optional[str]
+   wikidata: Optional[str] 
 
 class TmdbRequestResult(BaseModel):
     id: int
