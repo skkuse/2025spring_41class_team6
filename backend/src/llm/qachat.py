@@ -203,17 +203,18 @@ def run_qa_mode():
         docs = retriever.get_relevant_documents(user_input)
         context = "\n\n".join([doc.page_content for doc in docs])
 
-        full_prompt = response_prompt.format(context=context, question=user_input)
-
+        summary = memory.buffer or "(요약 없음)"
+        full_prompt = response_prompt.format(history=summary, context=context, question=user_input)
+        
         print("\n[답변] ", end="", flush=True)
+        full_answer = ""
         for token in stream_chat_response(full_prompt):
             print(token, end="", flush=True)
+            full_answer += token
         print()
 
         # 요약 memory 업데이트
-        '''
         memory.save_context({"input": user_input}, {"output": full_answer})
         summary = memory.buffer
-        if summary:
-            print("\n[요약] 지금까지의 대화 요약:\n", summary)
-        '''
+        #if summary:
+        #    print("\n[요약] 지금까지의 대화 요약:\n", summary)

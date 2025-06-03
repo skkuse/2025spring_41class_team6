@@ -113,7 +113,9 @@ def get_qa_chain_prompt(session_id: str):
 캐릭터의 말투와 성격, 세계관을 유지하며 답변해야 합니다.
 반드시 캐릭터의 어투, 말끝, 말버릇 등을 반영하고 감정 표현도 포함하세요.
 """),
+        ("system", "{history}"),
         ("user", "{question}")
+        
     ])
     return full_prompt
 
@@ -141,9 +143,15 @@ def run_character_mode():
         user_input = input("\n입력 (종료하려면 'exit'): ")
         if user_input.lower() == "exit":
             break
-
-        full_prompt = prompt_template.format(question=user_input)
+        
+        memory = get_memory(session_id)
+        summary = memory.buffer or "(요약 없음)"
+        full_prompt = prompt_template.format(history=summary, question=user_input)
+        
         print("\n[답변] ", end="", flush=True)
+        full_answer = ""
         for token in stream_chat_response(full_prompt):
             print(token, end="", flush=True)
+            full_answer += token
         print()
+        memory.save_context({"input": user_input}, {"output": full_answer})
