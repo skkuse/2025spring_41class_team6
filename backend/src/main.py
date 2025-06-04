@@ -156,19 +156,40 @@ async def post_message(room_id: int,
 # /movies/{id}
 # ---------------------------
 @app.get("/api/movies/{id}", response_model=Movie)
-async def get_movie(id: int):
+async def get_movie(id: int = Path(...), verbose: bool = Query(True), db: Session = Depends(get_db)):
+    movie = db_find_movie_by_id(db, id, verbose)
+    if movie is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="영화가 없습니다.")
+
     return Movie(
-        id=id,
-        title="영화 제목(TMDB-ko 기준)",
-        overview="영화 줄거리 요약",
-        wiki_document="wiki 줄거리",
-        release_date="2000-00-00 00:00:00",
-        poster_img_url="https://poster.example.com",
-        trailer_img_url="https://trailer.example.com",
-        rating=0,
-        ordering=0
+        id=movie.id,
+        title=movie.title,
+        overview=movie.tmdb_overview                             if movie.tmdb_overview else "[TMDB 줄거리 없음]",
+        wiki_document=movie.wiki_document                        if movie.wiki_document else "[WIKIPEDIA 정보 없음]",
+        release_date=str(movie.release_date)                     if movie.release_date else "[방영일 정보 없음]",
+        poster_img_url=tmdb_full_image_path(movie.poster_img_url, ImgType.POSTER, None)  if movie.poster_img_url  else "",
+        trailer_img_url=tmdb_full_image_path(movie.trailer_img_url, ImgType.STILL, None) if movie.trailer_img_url else "",
+        rating = 0,
+        ordering = 0,
+        genres = movie.genres,
+        chracters = [public_character_info(chara) for chara in movie.characters]
     )
 
+def public_character_info(internal: CharacterInfoInternal) -> Character:
+    return Character(
+        id = internal.id,
+        name = internal.name,
+        actor = (
+            Actor(
+                id = internal.actor.id,
+                name = internal.actor.name,
+                profile_image = tmdb_full_image_path(
+                    internal.actor.profile_image_path,
+                    ImgType.PROFILE,
+                    None) if internal.actor.profile_image_path else ""
+            ) if internal.actor else None
+        )
+    )
 
 # ---------------------------
 # /movies/bookmarked

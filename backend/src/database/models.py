@@ -119,6 +119,7 @@ class CharacterProfile(Base):
     description    : Mapped[str]      = mapped_column(nullable=False)
     tone           : Mapped[str]      = mapped_column(nullable=False)
     other_features : Mapped[Optional[str]]
+    actor_id       : Mapped[Optional[int]] = mapped_column(ForeignKey(fk(TABLE_ACTOR), ondelete="SET NULL"))
 
 class Genre(Base):
     __tablename__ = TABLE_GENRE
@@ -127,8 +128,11 @@ class Genre(Base):
 
 class Actor(Base):
     __tablename__ = TABLE_ACTOR
-    id   : Mapped[int]  = mapped_column(primary_key=True)
-    name : Mapped[str]  = mapped_column(nullable=False)
+    id            : Mapped[int]  = mapped_column(primary_key=True)
+    tmdb_id       : Mapped[int]  = mapped_column(unique=True, nullable=False)
+    name          : Mapped[str]  = mapped_column(nullable=False)
+    original_name : Mapped[str]  = mapped_column(nullable=False)
+    profile_path  : Mapped[Optional[str]]
 
 class Platform(Base):
     __tablename__ = TABLE_PLATFORM

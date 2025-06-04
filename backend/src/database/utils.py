@@ -35,6 +35,19 @@ class ChatHistoryInternal(BaseModel):
   timestamp: datetime
   model_config = ConfigDict(from_attributes=True)
 
+class PersonInfoInternal(BaseModel):
+  id: int
+  name: str
+  profile_image_path: Optional[str]
+
+
+class CharacterInfoInternal(BaseModel):
+  id: int
+  name: str
+  tone: str
+  description: str
+  actor: Optional[PersonInfoInternal] = None
+
 class MovieInfoInternal(BaseModel):
   id: int
   tmdb_id: int
@@ -45,6 +58,10 @@ class MovieInfoInternal(BaseModel):
   poster_img_url: Optional[str]
   trailer_img_url: Optional[str]
   last_update: datetime
+  genres: List[str] = []
+  characters: List[CharacterInfoInternal] = []
+  directors: List[PersonInfoInternal] = []
+  ranking: Optional[int] = None
   model_config = ConfigDict(from_attributes=True)
 
 class ChatRoomContext(BaseModel):
@@ -77,7 +94,6 @@ def db_create_new_user(db: Session, email: str, password: str, nickname: str):
   except:
     db.rollback()
     return None
-
 
 def db_find_user(db: Session, email: str) -> UserInfoInternal|None:
   """email을 key로 DB에서 user 정보 불러옴"""
@@ -236,10 +252,44 @@ def db_add_bookmark(db: Session, id: int):
 def db_rm_bookmark(db: Session, id: int):
   raise NotImplementedError
 
-def db_find_movie_by_id(db: Session, id: int):
+def db_find_movie_by_id(db: Session, id: int, verbose: bool = True) -> MovieInfoInternal|None:
   stmt = sql.select(m.Movie).where(m.Movie.id == id)
   movie = db.execute(stmt).scalar_one_or_none()
-  return orm_to_dict(movie)
+  if movie is None:
+    return None
+  
+  genres = []
+  directors = []
+  characters = []
+  if verbose:
+    stmt_genre = sql.select(m.Genre).join(m.MovieGenre, m.Genre.id == m.MovieGenre.genre_id).where(m.MovieGenre.movie_id == id)
+    stmt_director = sql.select(m.Director).join(m.MovieDirector, m.Director.id == m.MovieDirector.director_id).where(m.MovieDirector.movie_id == id)
+    stmt_chara = sql.select(m.CharacterProfile, m.Actor).where(m.CharacterProfile.movie_id == id).outerjoin(m.Actor, m.CharacterProfile.actor_id == m.Actor.id)
+
+    genres = [i.name for i in db.scalars(stmt_genre).all()]
+    directors = [PersonInfoInternal(id = i.id, name = i.name, profile_image_path=i.profile_path) for i in db.scalars(stmt_director).all()]
+    characters = [CharacterInfoInternal(
+      id = character.id,
+      name = character.name,
+      tone = character.tone,
+      description = character.description,
+      actor = PersonInfoInternal(id = actor.id, name = actor.name, profile_image_path = actor.profile_path) if actor is not None else None
+    ) for character, actor in db.execute(stmt_chara).all()]
+
+  return MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=cast(int, movie.tmdb_id),
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update,
+    genres=genres,
+    directors=directors,
+    characters=characters
+  )
 
 def db_find_movie_by_tmdb_id(db: Session, tmdb_id: int):
   stmt = sql.select(m.Movie).where(m.Movie.tmdb_id == tmdb_id)
