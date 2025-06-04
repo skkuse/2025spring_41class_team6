@@ -25,7 +25,8 @@ def tmdb_get_configuration() -> dict|None:
     _cached_tmbd_configuration = tmdb.Configuration().info()
   return _cached_tmbd_configuration
 
-def tmdb_parse_casts(credits: dict) -> List[ActorInfo]:
+# TMDB에서는 주요인물만 가져올 수 있는 방법이 딱히 없기 때문에 order 상위 N명으로 추려냅니다
+def tmdb_parse_casts(credits: dict, max_ordering: int) -> List[ActorInfo]:
   tmp = credits["cast"]
   return [ActorInfo(
     credit_id = i["credit_id"],
@@ -35,7 +36,7 @@ def tmdb_parse_casts(credits: dict) -> List[ActorInfo]:
     original_name = i["original_name"],
     profile_path = i["profile_path"],
     order = i["order"],
-  ) for i in tmp]
+  ) for i in tmp if i["order"] < max_ordering]
 
 def tmdb_parse_directors(credits: dict) -> List[DirectorInfo]:
   tmp = credits["crew"]
@@ -63,7 +64,7 @@ def tmdb_parse_platforms(kr_providers: dict) -> List[PlatformInfo]:
     logo_path = i["logo_path"],
   ) for i in tmp]
 
-def tmdb_request_movie_bulk(identifier: TmdbSearchOpt) -> List[TmdbRequestResult]:
+def tmdb_request_movie_bulk(identifier: TmdbSearchOpt, max_casts: int= 15) -> List[TmdbRequestResult]:
   """
   TMDB에서 영화를 찾습니다.  
   Args:
@@ -106,7 +107,7 @@ def tmdb_request_movie_bulk(identifier: TmdbSearchOpt) -> List[TmdbRequestResult
       poster_path = response["poster_path"],
       release_date = tmdb_parse_release_date(response),
       genres = tmdb_parse_genres(response),
-      casts = tmdb_parse_casts(credits),
+      casts = tmdb_parse_casts(credits, max_casts),
       directors = tmdb_parse_directors(credits),
       platforms = tmdb_parse_platforms(kr_providers),
       external_ids = ExternalIdInfo(

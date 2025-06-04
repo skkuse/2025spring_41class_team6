@@ -339,6 +339,21 @@ def _upsert_director(db: Session, director: DirectorInfo):
   db.add(doc)
   return doc
 
+def _upsert_actor(db: Session, actor: ActorInfo):
+  stmt = sql.select(m.Actor).where(m.Actor.tmdb_id == actor.person_id)
+  result = db.execute(stmt).scalar_one_or_none()
+  if result:
+    return result
+  
+  doc = m.Actor(
+    tmdb_id = actor.person_id,
+    name = actor.name,
+    original_name = actor.original_name,
+    profile_path = actor.profile_path
+  )
+  db.add(doc)
+  return doc
+
 def _upsert_platform(db: Session, platform: PlatformInfo):
   stmt = sql.select(m.Platform).where(m.Platform.tmdb_id == platform.tmdb_id)
   result = db.execute(stmt).scalar_one_or_none()
@@ -372,9 +387,11 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
     stmt1 = sql.delete(m.MovieGenre).where(m.MovieGenre.movie_id == result.id)
     stmt2 = sql.delete(m.MovieDirector).where(m.MovieDirector.movie_id == result.id)
     stmt3 = sql.delete(m.MoviePlatform).where(m.MoviePlatform.movie_id == result.id)
+    stmt4 = sql.delete(m.MovieActor).where(m.MovieActor.movie_id == result.id)
     db.execute(stmt1)
     db.execute(stmt2)
     db.execute(stmt3)
+    db.execute(stmt4)
     doc = result
     
   else:
@@ -391,7 +408,22 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
   pending_genres = [_upsert_genre(db, i) for i in tmdb_data.genres]
   pending_directors = [_upsert_director(db, i) for i in tmdb_data.directors]
   pending_platforms = [_upsert_platform(db, i) for i in tmdb_data.platforms]
+  
+  pending_actors = [(_upsert_actor(db, i), idx) for idx, i in enumerate(tmdb_data.casts)]
   db.flush()
+
+  # 캐릭터를 추가함 (begin)
+  for a, i in pending_actors:
+    cast_info = tmdb_data.casts[i]
+    ch = m.CharacterProfile(
+      movie_id = doc.id,
+      name = cast_info.character,
+      description = "",
+      tone = "",
+      actor_id = a.id
+    )
+    db.add(ch)
+  # 캐릭터를 추가함 (end)
 
   movie_id = doc.id
   for g in pending_genres:
@@ -402,6 +434,9 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
     db.add(rel)
   for p in pending_platforms:
     rel = m.MoviePlatform(platform_id=p.id, movie_id=movie_id)
+    db.add(rel)
+  for a, _ in pending_actors:
+    rel = m.MovieActor(actor_id=a.id, movie_id=movie_id)
     db.add(rel)
 
   try:
