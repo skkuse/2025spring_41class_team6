@@ -258,7 +258,45 @@ def run_qa_mode():
 # run_qa_mode와 사실 상 동일한 중복 코드이나, 혼란을 방지하기 위해 run_qa_mode는 남겨놓았습니다.
 # 만약 변경 사항이 있다면, run_qa_mode말고 여기를 고쳐 주세요
 # 그리고 웬만하면 입력 parameter랑 return 형식을 바꾸지 말아주세요
-def get_streamed_messages(session_id: str, movie_titles: list[str], user_input: str):
+# llm_layer에서 의존하고 있는 함수 목록:
+#   * get_memory()
+#   * extract_titles_and_metadata_with_llm()
+#   * is_cached_on_chroma()
+#   * add_to_chroma()
+#   * is_memory_on_cache()
+#   * load_memory()
+# 위 함수들은 동작 변경을 가급적 하지 않아주셨으면 합니다.
+# 궁금하신 점 있으면 말씀해주세요!
+from typing import List
+from database.utils import MovieInfoInternal
+def get_streamed_messages(
+        session_id: str,
+        movie_titles: list[str],
+        user_input: str,
+        bookmark: List[MovieInfoInternal],
+        archive: List[MovieInfoInternal]):
+    
+    #
+    # session_id Summary를 사용하는데 쓰일 session_id 입니다.
+    # movie_titles은 extract_with_llm... 함수로 추출해서 나온 title들의 배열입니다.
+    # user_input는 그냥 사용자 입력입니다. 채팅창에 사용자가 입력한 그 문자열 그대롭니다.
+    #
+    # 북마크 정보와 아키이브된 영화 정보는 bookmark, archive를 통해 전달됩니다.
+    # bookmark, archive는 영화 정보의 list로, bookmark[0], bookmark[1] 이런 식으로 참조할 수 있습니다.
+    # 각 element는 pydantic으로 typing이 들어가 있기 때문에, Ctrl(CMD)+Click으로 안에 어떤 필드가 있는지
+    # 확인해보실 수 있습니다. 따라서 title이 필요하다면 bookmark[0].title 이렇게 바로 쓸 수 있습니다.
+    #
+    # 만약에 일반 dict 형식으로 바꾸고 싶으시다면:
+    # res = bookmark[0].model_dump()
+    # 이렇게 하시면 res가 dict로 변환된 형식이 됩니다.
+    #
+    # 참고: 아직 archive 기능이 미완이라 일단 빈 배열만 보내고 있을 거라서 참고바랍니다.
+    #
+    # 이 함수 및 _stream_response_generator를 수정해서 bookmark 반영이 되게 해주시면 될 것 같습니다.
+    # _stream_response_generator의 입력 parameter는 바뀌어도 괜찮지만,
+    # get_stream_messages의 입력 parameter, return 타입,
+    # _stream_response_generator의 return 타입이 변경되면 안 됩니다.
+    #
 
     db = get_chroma_shared()
     memory = get_memory(session_id)
@@ -288,6 +326,7 @@ async def _stream_response_generator(user_input: str, prompt: str, memory):
                 else json.dumps(chunk.content, ensure_ascii=False)
             )
             full_answer += content
-            yield content
+            yield content # content를 받는 대로 client에게 보냅니다
 
+    # content를 전부 받고 나면, save_context가 호출됩니다
     memory.save_context({"input": user_input}, {"output": full_answer})

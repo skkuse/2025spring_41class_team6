@@ -109,5 +109,6 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
         else:
             print("session 정보가 없습니다. 새로운 context를 생성합니다.")
 
-    # 야! 신난다!
-    return qachat.get_streamed_messages(session_id, titles, message)
+    bookmarks = db_get_bookmarked_movies(db, user_id)
+    archives = []
+    return qachat.get_streamed_messages(session_id, titles, message, bookmarks, archives)
