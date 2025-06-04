@@ -1,7 +1,7 @@
-const fetchChatSSE = async (room_id, content, onToken, onDone, onError) => {
+const fetchChatSSE = async (roomId, content, onToken, onDone, onError) => {
   try {
     const response = await fetch(
-      `/api/chatrooms/${room_id}/messages?stream=true`,
+      `/api/chatrooms/${roomId}/messages?stream=true`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -9,31 +9,45 @@ const fetchChatSSE = async (room_id, content, onToken, onDone, onError) => {
       }
     );
 
-    if (!response.body) throw new Error("No stream");
-
     const reader = response.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let done = false;
-    let accumulated = "";
 
-    while (!done) {
-      const { value, done: doneReading } = await reader.read();
-      done = doneReading;
-      if (value) {
-        const chunk = decoder.decode(value, { stream: true });
-        // SSE는 "data: ..." 형태로 오므로 파싱 필요
-        const lines = chunk.split("\n");
-        for (let line of lines) {
-          if (line.startsWith("data: ")) {
-            const token = line.replace("data: ", "");
-            accumulated += token;
-            onToken(token, accumulated); // token별/누적값 콜백
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+
+          if (data === "[DONE]") {
+            break;
+          }
+
+          if (data) {
+            try {
+              const parsed = JSON.parse(data);
+              onToken(parsed);
+            } catch {
+              onToken(data);
+            }
           }
         }
       }
     }
-    onDone && onDone(accumulated);
+
+    onDone && onDone();
   } catch (err) {
     onError && onError(err);
   }
 };
+
+export default fetchChatSSE;

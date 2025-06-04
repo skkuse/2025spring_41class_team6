@@ -5,9 +5,9 @@ import useMessagesList from "@/hooks/chat/useMessagesList";
 import CircularProgress from "@mui/material/CircularProgress";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import fetchChatSSE from "@/apis/chat/fetchchatSSE";
 
 // --- (1) 버퍼링 + slice 방식 타이핑 애니메이션 구현 ---
-const TYPING_DELAY = 200; // ms
 
 const ChatRoom = () => {
   const [message, setMessage] = useState("");
@@ -23,67 +23,25 @@ const ChatRoom = () => {
   const { data: messages, isLoading } = useMessagesList(chatId);
   const messagesEndRef = useRef(null);
 
+  const TYPING_DELAY = 70; // ms
+  // 타이핑 애니메이션 - Interval 방식
   useEffect(() => {
     if (!isStreaming) return;
-    let stopped = false;
 
-    function typeNext() {
-      if (stopped) return;
+    const interval = setInterval(() => {
       if (tokenQueue.current.length > 0) {
         const token = tokenQueue.current.shift();
         setDisplayedMessage((prev) => prev + token);
-        setTimeout(typeNext, TYPING_DELAY);
       }
-    }
-    typeNext();
+    }, TYPING_DELAY); // 더 짧은 간격으로 체크
 
-    return () => {
-      stopped = true;
-    };
+    return () => clearInterval(interval);
   }, [isStreaming]);
 
   // 스크롤 항상 맨 아래로
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sendMessage, displayedMessage, isStreaming]);
-
-  // SSE fetch 함수
-  const fetchChatSSE = async (roomId, content, onDone, onError) => {
-    try {
-      const response = await fetch(
-        `/api/chatrooms/${roomId}/messages?stream=true`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
-        }
-      );
-
-      if (!response.body) throw new Error("No stream");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let done = false;
-
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-          for (let line of lines) {
-            if (line.startsWith("data: ")) {
-              const token = line.replace("data: ", "");
-              tokenQueue.current.push(token);
-            }
-          }
-        }
-      }
-      onDone && onDone();
-    } catch (err) {
-      onError && onError(err);
-    }
-  };
 
   // 메시지 전송
   const handleSendMessage = async () => {
@@ -97,6 +55,12 @@ const ChatRoom = () => {
       await fetchChatSSE(
         chatId,
         message,
+        async (token) => {
+          console.log("Received token:", JSON.stringify(token));
+          console.log("Token length:", token.length);
+          console.log("Has spaces:", token.includes(" "));
+          tokenQueue.current.push(token);
+        },
         async () => {
           setSendMessage("");
           setFullReceiveMessage("");
