@@ -76,7 +76,6 @@ class Movie(BaseModel):
     trailer_img_url: str
     rating: int = 0
     ordering: int = 0
-    ranking: Optional[int] = None  # archive 용
     genres: List[str] = []
     chracters: List[Character] = []
 

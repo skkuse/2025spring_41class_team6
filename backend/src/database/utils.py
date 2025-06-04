@@ -61,7 +61,7 @@ class MovieInfoInternal(BaseModel):
   genres: List[str] = []
   characters: List[CharacterInfoInternal] = []
   directors: List[PersonInfoInternal] = []
-  ranking: Optional[int] = None
+  rating: Optional[int] = None
   model_config = ConfigDict(from_attributes=True)
 
 class ChatRoomContext(BaseModel):
@@ -243,14 +243,59 @@ def db_get_chatroom_context(db: Session, room_id: int) -> ChatRoomContext:
     summary=result
   )
 
-def db_get_bookmarked_movies(db: Session):
-  raise NotImplementedError
 
-def db_add_bookmark(db: Session, id: int):
-  raise NotImplementedError
+def db_get_bookmarked_movies(db: Session, user_id: int):
+  """
+  북마크된 영화를 불러옵니다.  
+  genre, character, platform 등의 정보가 필요하다면
+  db_find_movie_id를 추가로 사용하시면 됩니다.
+  만약 너무 불편하다면 말씀해주세요
+  """
+  stmt = (
+    sql.select(m.BookmarkedMovie, m.Movie)
+    .where(m.BookmarkedMovie.user_id == user_id)
+    .join(m.Movie, m.Movie.id == m.BookmarkedMovie.movie_id)
+  )
+  return [MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=movie.tmdb_id,
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update
+  ) for _, movie in db.execute(stmt).all()]
+  
 
-def db_rm_bookmark(db: Session, id: int):
-  raise NotImplementedError
+def db_add_bookmark(db: Session, user_id: int, movie_id: int):
+  stmt = (
+    sql.insert(m.BookmarkedMovie)
+    .values(movie_id = movie_id, user_id = user_id)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except IntegrityError:
+    db.rollback()
+    return False
+
+def db_rm_bookmark(db: Session, user_id: int, movie_id: int):
+  stmt = (
+    sql.delete(m.BookmarkedMovie)
+    .where(m.BookmarkedMovie.movie_id == movie_id)
+    .where(m.BookmarkedMovie.user_id == user_id)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except IntegrityError:
+    db.rollback()
+    return False
+
 
 def db_find_movie_by_id(db: Session, id: int, verbose: bool = True) -> MovieInfoInternal|None:
   stmt = sql.select(m.Movie).where(m.Movie.id == id)
@@ -542,32 +587,3 @@ def db_add_movie_reviews(db: Session, id: int, reviews: list[str]):
 # update_movie_by_tmdb_search(asdf, { "query": "아이언맨 3" })
 # print(find_movies_by_alias(asdf, "기생충"))
 # asdf.close()
-
-# 북마킹 기능들
-def find_user_bookmarked(db: Session, user_id: int):
-  raise NotImplementedError
-
-def bookmark_user_movies(db: Session, user_id: int, movie_id: int):
-  doc = m.BookmarkedMovie(movie_id=movie_id, user_id=user_id)
-  db.add(doc)
-  try:
-    db.commit()
-    print("log - bookmark_user_movies: success")
-    return True
-  except IntegrityError as e:
-    db.rollback()
-    msg = str(e.orig).lower()
-    print("error - bookmark_user_movies: IntegrityError")
-    print(msg)
-    return False
-  except Exception:
-    db.rollback()
-    print("error - bookmark_user_movies: other")
-    raise
-
-# 아카이빙 기능들
-def find_user_archived(user_id: int):
-  raise NotImplementedError
-
-def archive_user_movies(user_id: int, movie_id: int, rating: int):
-  raise NotImplementedError
