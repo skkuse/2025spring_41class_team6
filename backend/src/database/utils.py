@@ -495,6 +495,46 @@ def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: 
     
   return datas
 
+def db_update_wikipedia_data(db: Session, id: int, wiki_data: str):
+  stmt = (
+    sql.update(m.Movie).where(m.Movie.id == id)
+    .values(wiki_document=wiki_data)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
+def db_get_movie_reviews(db: Session, id: int, limit: int|None) -> list[str]:
+  if limit:
+    stmt = (
+      sql.select(m.MovieReview.text)
+      .where(m.MovieReview.id == id)
+      .limit(limit)
+    )
+  else:
+    stmt = (
+      sql.select(m.MovieReview.text)
+      .where(m.MovieReview.id == id)
+    )
+
+  return [i for i in db.execute(stmt).scalars().all()]
+
+def db_add_movie_reviews(db: Session, id: int, reviews: list[str]):
+  for i in reviews:
+    doc = m.MovieReview(movie_id = id, text = i)
+    db.add(doc)
+  
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
 # asdf = m.SessionLocal()
 # update_movie_by_tmdb_search(asdf, { "query": "기생충" })
 # update_movie_by_tmdb_search(asdf, { "query": "마인크래프트 무비" })

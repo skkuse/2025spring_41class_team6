@@ -76,16 +76,17 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
             # 4. See if we have any outdated, or missing data in our DB
             if not movie.wiki_document:
                 movie.wiki_document = crawler.get_wikipedia_content(title)
-                db_data_modified = True
-            
-            # 5. we just crawl watcha reviews unconditionally for now...
-            reviews = crawler.get_watcha_reviews(title)
-            
-            # 6. TODO: we should update our DB if it was modified(not yet implemented)
-            if db_data_modified:
-                pass
+                if movie.wiki_document:
+                    db_update_wikipedia_data(db, movie.id, movie.wiki_document)
 
-            # 7. Let's cache it
+            # 5. 영화 리뷰를 불러옵니다. 3번째 인자를 None이 아닌 것으로 설정하면 그 수만큼만 리뷰를 불러옵니다
+            reviews = db_get_movie_reviews(db, movie.id, None)
+            if not reviews:
+                print(f"{title}에 대한 리뷰가 DB에 없습니다. 리뷰를 크롤링 합니다...")
+                reviews = cast(list[str], crawler.get_watcha_reviews(title))
+                db_add_movie_reviews(db, movie.id, reviews)
+
+            # 6. Let's cache it
             qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews)
             print(f"[send_message_to_qachat] chroma에 {title}(이)가 캐시되었습니다")
 
