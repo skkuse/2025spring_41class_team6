@@ -264,7 +264,9 @@ const ChatRoom = () => {
           isMovieRecommendOpen ? "w-120 opacity-100" : "w-0 opacity-0"
         }`}
       >
-        <MovieRecommend onClose={() => setIsMovieRecommendOpen(false)} />
+        {isMovieRecommendOpen && (
+          <MovieRecommend onClose={() => setIsMovieRecommendOpen(false)} />
+        )}
       </div>
     </div>
   );
