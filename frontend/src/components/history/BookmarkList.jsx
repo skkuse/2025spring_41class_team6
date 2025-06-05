@@ -19,7 +19,6 @@ const BookmarkList = () => {
           director={movie.directors[0].name}
           description={movie.overview}
           imageUrl={movie.poster_img_url}
-          viewMode="bookmark"
         />
       ))}
     </div>

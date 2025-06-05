@@ -27,7 +27,7 @@ const ChatLanding = ({ mode = "normal" }) => {
   };
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-white h-full">
+    <div className="flex flex-1 flex-col items-center justify-center bg-white h-full w-full">
       <div className="absolute top-6 right-6">
         <button
           onClick={() => navigate("/history")}

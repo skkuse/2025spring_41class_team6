@@ -20,10 +20,23 @@ const MemoizedMessage = memo(({ msg }) => (
         <MarkdownChat>{msg.ai_message}</MarkdownChat>
       </span>
     )}
+    {msg.timestamp && (
+      <div className="text-xs text-gray-400 mt-2">
+        {new Date(msg.timestamp).toLocaleString("ko-KR", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })}
+      </div>
+    )}
   </div>
 ));
 
 const ChatRoom = () => {
+  //////////////////// 로컬 상태 ////////////////////
   const [message, setMessage] = useState("");
   const [sendMessage, setSendMessage] = useState("");
   const [displayedMessage, setDisplayedMessage] = useState("");
@@ -34,11 +47,13 @@ const ChatRoom = () => {
   const lastScrollTime = useRef(0);
   const [isMovieRecommendOpen, setIsMovieRecommendOpen] = useState(false);
 
-  const navigate = useNavigate();
-  const { chatId } = useParams();
-  const { data: messages, isLoading } = useMessagesList(chatId);
   const messagesEndRef = useRef(null);
   const containerRef = useRef(null);
+  const navigate = useNavigate();
+  const { chatId } = useParams();
+
+  //////////////////// 서버 상태 fetch ////////////////////
+  const { data: messages, isLoading } = useMessagesList(chatId);
 
   const getRandomTypingDelay = useCallback(() => {
     const randomVariation = Math.random();
@@ -47,10 +62,10 @@ const ChatRoom = () => {
     else return 150;
   }, []);
 
-  // 스크롤 최적화 - debounce와 requestAnimationFrame 사용
+  // 스크롤 함수
   const scrollToBottom = useCallback(() => {
     const now = Date.now();
-    if (now - lastScrollTime.current < 100) return; // 100ms 디바운스
+    if (now - lastScrollTime.current < 100) return;
 
     lastScrollTime.current = now;
     if (animationFrameId.current) {
@@ -62,7 +77,12 @@ const ChatRoom = () => {
     });
   }, []);
 
-  // 타이핑 애니메이션 최적화
+  // chatId 변경 상태 변경
+  useEffect(() => {
+    setIsMovieRecommendOpen(false);
+  }, [chatId]);
+
+  // 타이핑 애니메이션
   useEffect(() => {
     if (!isStreaming) return;
 
@@ -72,7 +92,6 @@ const ChatRoom = () => {
     const animate = (currentTime) => {
       if (currentTime - lastTime >= getRandomTypingDelay()) {
         if (tokenQueue.current.length > 0) {
-          // 한 번에 여러 토큰 처리하여 성능 개선
           const tokensToAdd = tokenQueue.current.splice(
             0,
             Math.min(3, tokenQueue.current.length)
@@ -94,7 +113,7 @@ const ChatRoom = () => {
     };
   }, [isStreaming, getRandomTypingDelay]);
 
-  // 스크롤 이벤트 최적화 - 의존성 분리
+  // 스크롤 이벤트
   useEffect(() => {
     scrollToBottom();
   }, [messages?.length, scrollToBottom]);
@@ -112,7 +131,7 @@ const ChatRoom = () => {
     }
   }, [displayedMessage, isStreaming, scrollToBottom]);
 
-  // 메시지 전송 - ref를 사용하여 최신 값 참조
+  // 메시지 전송
   const messageRef = useRef(message);
   messageRef.current = message;
 
@@ -138,12 +157,16 @@ const ChatRoom = () => {
             setIsStreaming(false);
             // 배치 업데이트로 리렌더링 최소화
             queryClient.invalidateQueries(["messagesList", chatId]);
+            queryClient.invalidateQueries(["recommend", chatId]);
           },
           (err) => {
             setIsStreaming(false);
             setSendMessage("");
             setDisplayedMessage("");
             alert("에러! " + err.message);
+          },
+          (open) => {
+            setIsMovieRecommendOpen(open);
           }
         );
       } catch (error) {
@@ -189,7 +212,7 @@ const ChatRoom = () => {
   }, []);
 
   return (
-    <div className="flex bg-white h-full w-full">
+    <div className="flex flex-1 bg-white h-full w-full">
       {/* 메인 채팅 영역 */}
       <div className=" flex flex-col w-full">
         {/* 북마크 버튼 */}
@@ -267,7 +290,10 @@ const ChatRoom = () => {
         }`}
       >
         {isMovieRecommendOpen && (
-          <MovieRecommend onClose={() => setIsMovieRecommendOpen(false)} />
+          <MovieRecommend
+            onClose={() => setIsMovieRecommendOpen(false)}
+            chatroomId={chatId}
+          />
         )}
       </div>
     </div>
