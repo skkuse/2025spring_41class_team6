@@ -186,43 +186,43 @@ async def delete_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depe
 # /movies/archive
 # ---------------------------
 @app.get("/api/movies/archive", response_model=List[Movie])
-async def get_archive():
-    return [
-        Movie(id=1, title="Archived Movie #1", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
-              poster_img_url="https://...", trailer_img_url="https://...", ordering=1, ranking=5),
-        Movie(id=2, title="Archived Movie #2", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
-              poster_img_url="https://...", trailer_img_url="https://...", ordering=2, ranking=3)
-    ]
+async def get_archive(user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    movies = db_get_archived_movies(db, user.id)
+    return [public_movie_info(movie) for movie in movies]
 
 
 @app.post("/api/movies/archive", response_model=Movie)
-async def post_archive(payload: ArchiveRequest):
-    return Movie(
-        id=payload.id,
-        title="Archived!",
-        overview="...",
-        wiki_document="...",
-        release_date="2000-00-00 00:00:00",
-        poster_img_url="https://poster.example.com",
-        trailer_img_url="https://trailer.example.com",
-        ordering=1,
-        ranking=payload.ranking
-    )
+async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    if db_add_archived(db, user.id, payload.movie_id, payload.rating):
+        ret = public_movie_info(
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, False) )
+        )
+        ret.rating = min(5, max(0, payload.rating))
+        return ret
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
+
+
+@app.put("/api/movies/archive", response_model=Movie)
+async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    if db_update_archived(db, user.id, payload.movie_id, payload.rating):
+        ret = public_movie_info(
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, False) )
+        )
+        ret.rating = min(5, max(0, payload.rating))
+        return ret
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
 
 
 @app.delete("/api/movies/archive", response_model=Movie)
-async def delete_archive(payload: MovieIDRequest):
-    return Movie(
-        id=payload.id,
-        title="Archive Removed",
-        overview="...",
-        wiki_document="...",
-        release_date="2000-00-00 00:00:00",
-        poster_img_url="https://poster.example.com",
-        trailer_img_url="https://trailer.example.com",
-        ordering=1,
-        ranking=3
-    )
+async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    movie = db_find_movie_by_id(db, payload.id, False)
+    if movie and db_rm_archived(db, user.id, payload.id):
+        return public_movie_info(movie)
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
+
 
 # ---------------------------
 # /movies/{id}
@@ -247,7 +247,7 @@ def public_movie_info(internal: MovieInfoInternal) -> Movie:
         release_date=str(movie.release_date)                     if movie.release_date else "[방영일 정보 없음]",
         poster_img_url=tmdb_full_image_path(movie.poster_img_url, ImgType.POSTER, None)  if movie.poster_img_url  else "",
         trailer_img_url=tmdb_full_image_path(movie.trailer_img_url, ImgType.STILL, None) if movie.trailer_img_url else "",
-        rating = 0,
+        rating = movie.rating                                                            if movie.rating else 0,
         ordering = 0,
         genres = movie.genres,
         chracters = [public_character_info(chara) for chara in movie.characters]

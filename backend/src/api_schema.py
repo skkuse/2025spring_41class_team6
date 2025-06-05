@@ -82,5 +82,6 @@ class Movie(BaseModel):
 class MovieIDRequest(BaseModel):
     id: int
 
-class ArchiveRequest(MovieIDRequest):
-    ranking: int
+class ArchiveRequest(BaseModel):
+    movie_id: int
+    rating: int
