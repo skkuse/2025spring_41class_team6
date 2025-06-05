@@ -265,7 +265,9 @@ def db_get_bookmarked_movies(db: Session, user_id: int):
     release_date=movie.release_date,
     poster_img_url=movie.poster_img_url,
     trailer_img_url=movie.trailer_img_url,
-    last_update=movie.last_update
+    last_update=movie.last_update,
+    genres=db_get_genres_of_movie(db, movie.id),
+    directors=db_get_directors_of_movie(db, movie.id),
   ) for _, movie in db.execute(stmt).all()]
   
 
@@ -293,6 +295,96 @@ def db_rm_bookmark(db: Session, user_id: int, movie_id: int):
     db.commit()
     return True
   except IntegrityError:
+    db.rollback()
+    return False
+
+def db_get_genres_of_movie(db: Session, movie_id: int):
+  stmt = (
+    sql.select(m.Genre.name).join(m.MovieGenre, m.Genre.id == m.MovieGenre.genre_id)
+    .where(m.MovieGenre.movie_id == movie_id)
+  )
+  return [cast(str, i) for i in db.execute(stmt).scalars().all()]
+
+def db_get_directors_of_movie(db: Session, movie_id: int):
+  stmt = (
+    sql.select(m.Director).join(m.MovieDirector, m.Director.id == m.MovieDirector.director_id)
+    .where(m.MovieDirector.movie_id == movie_id)
+  )
+  return [PersonInfoInternal(id=i.id, name=i.name, profile_image_path=i.profile_path) for i in db.execute(stmt).scalars().all()]
+
+def db_get_archived_movies(db: Session, user_id: int):
+  """
+  아카이브된 영화를 불러옵니다.  
+  genre, character, platform 등의 정보가 필요하다면
+  db_find_movie_id를 추가로 사용하시면 됩니다.
+  만약 너무 불편하다면 말씀해주세요
+  """
+  stmt = (
+    sql.select(m.ArchivedMovie, m.Movie)
+    .where(m.ArchivedMovie.user_id == user_id)
+    .join(m.Movie, m.Movie.id == m.ArchivedMovie.movie_id)
+  )
+  return [MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=movie.tmdb_id,
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update,
+    rating=archived.rating, # 유저 개인 평점 불러옴
+    genres=db_get_genres_of_movie(db, movie.id),
+    directors=db_get_directors_of_movie(db, movie.id),
+  ) for archived, movie in db.execute(stmt).all()]
+
+def db_add_archived(db: Session, user_id: int, movie_id: int, rating: int):
+  stmt = (
+    sql.insert(m.ArchivedMovie)
+    .values(movie_id = movie_id, user_id = user_id, rating = rating)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except IntegrityError:
+    db.rollback()
+    return False
+
+def db_rm_archived(db: Session, user_id: int, movie_id: int):
+  stmt = (
+    sql.delete(m.ArchivedMovie)
+    .where(m.ArchivedMovie.movie_id == movie_id)
+    .where(m.ArchivedMovie.user_id == user_id)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except IntegrityError:
+    db.rollback()
+    return False
+
+def db_update_archived(db: Session, user_id: int, movie_id: int, rating: int):
+  # clamp
+  raw_rating = rating
+  rating = max(min(5, rating), 0)
+  if raw_rating != rating:
+    print(f"[경고] rating이 0 ~ 5 사이가 아닙니다. (rating = {raw_rating}) 자동으로 조정됨.")
+
+  stmt = (
+    sql.update(m.ArchivedMovie)
+    .where(m.ArchivedMovie.user_id == user_id)
+    .where(m.ArchivedMovie.movie_id == movie_id)
+    .values(rating = rating)
+  )
+
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except:
     db.rollback()
     return False
 
