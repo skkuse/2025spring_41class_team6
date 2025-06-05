@@ -273,7 +273,7 @@ def public_movie_info(internal: MovieInfoInternal) -> Movie:
         poster_img_url=tmdb_full_image_path(movie.poster_img_url, ImgType.POSTER, None)  if movie.poster_img_url  else "",
         trailer_img_url=tmdb_full_image_path(movie.trailer_img_url, ImgType.STILL, None) if movie.trailer_img_url else "",
         bookmarked=movie.bookmarked                                                      if movie.bookmarked is not None else False,
-        rating = movie.rating                                                            if movie.rating else 0,
+        rating = movie.rating,
         ordering = 0,
         genres = movie.genres,
         characters = [public_character_info(chara) for chara in movie.characters],

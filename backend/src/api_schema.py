@@ -74,7 +74,7 @@ class Movie(BaseModel):
     release_date: str
     poster_img_url: str
     trailer_img_url: str
-    rating: int = 0          # 유저 필드
+    rating: Optional[int] = None # 유저 필드
     bookmarked: bool = False # 유저 필드
     ordering: int = 0
     genres: List[str] = []
