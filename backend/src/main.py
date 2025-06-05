@@ -76,10 +76,14 @@ async def create_chatroom(payload: CreateChatroomRequest,
         )
 
     # 초기 메시지가 있었다면 메시지를 AI에게 보내고 응답을 chats에 append하여 반환
-    response = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
+    result = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
+    response = result["message"]
+    recommended = result["recommendation"]
     result = db_append_chat_message(db, room.id, payload.initial_message, response, get_summary_from_qachat(room.id))
     if result is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
+    else:
+        db_add_recommended_movies(db, result.id, recommended)
     
     chats.append(ChatHistory(
         user_message=result.user_chat,
@@ -101,6 +105,14 @@ async def delete_chatroom(payload: ChatroomIDRequest,
         return DeleteChatroomResponse(id=payload.id)
     else:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="db removal failed")
+
+# ---------------------------
+# /chatrooms/{room_id}/recommended
+# ---------------------------
+@app.get("/api/chatrooms/{room_id}/recommended", response_model=List[List[Movie]])
+async def get_recommended(room_id: int, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    list_of_movies = db_get_recommended_movies(db, room_id)
+    return [[public_movie_info(movie) for movie in movies] for movies in list_of_movies]
 
 # ---------------------------
 # /chatrooms/{room_id}/messages
@@ -141,19 +153,25 @@ async def post_message(room_id: int,
     else:
         async def event_generator():
             full_answer = ""
+            recommended = []
             async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
                 t = chunk.get("type")
                 v = chunk.get("content")
                 if t == "message":
                     full_answer += cast(str, v)
+                elif t == "recommendation":
+                    recommended = cast(list[int], v)
 
                 yield f"data: {json.dumps(chunk)}\n\n"
 
                 # 버퍼링 방지
                 await asyncio.sleep(0)
+
             result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
             if result is None:
                 print("something went wrong...")
+            else:
+              db_add_recommended_movies(db, result.id, recommended)
 
         return StreamingResponse(
             event_generator(),
