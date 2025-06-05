@@ -22,23 +22,31 @@ def get_summary_from_qachat(room_id: int) -> SummaryType:
 def _preprocess_user_input(user_input: str) -> str:
     return user_input
 
-async def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> str:
+async def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
     """
     message를 AI agent에게 전송하고, 그 응답을 하나의 string으로 반환합니다.  
     비동기 함수이기 때문에 응답을 받을 때는 `await`를 사용해주세요.
     """
     full_answer = ""
+    movie_ids = []
+    
     async for content in stream_send_message_to_qachat(db, user_id, room_id, message):
-        full_answer += content
+        v = content.get("content")
+        t = content.get("type")
+        if t == "message":
+            full_answer += v if v else ""
+        elif t == "recommendation":
+            movie_ids = v
 
-    return full_answer
+    return { "message": full_answer, "recommendation": movie_ids }
 
 def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
     """
     message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
     """
     message = _preprocess_user_input(message)
-    titles = []
+    titles: list[str] = []
+    ids: list[int] = []
     hints = qachat.extract_titles_and_metadata_with_llm(message)
     if hints:
         print(f"[send_message_to_qachat] 감지된 영화 제목: {hints}")
@@ -70,7 +78,6 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
             # TODO: 연도별 기반 매칭, IMDB 이용
             movie = movies_in_db[0]
 
-            db_data_modified = False
             print(f"[send_message_to_qachat] db_data:\n{movie}\n\n")
             
             # 4. See if we have any outdated, or missing data in our DB
@@ -110,5 +117,36 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
             print("session 정보가 없습니다. 새로운 context를 생성합니다.")
 
     bookmarks = db_get_bookmarked_movies(db, user_id)
-    archives = []
-    return qachat.get_streamed_messages(session_id, titles, message, bookmarks, archives)
+    archives = db_get_archived_movies(db, user_id)
+    
+    async def generator():
+        response = ""
+        async for chunk in qachat.get_streamed_messages(session_id, titles, message, bookmarks, archives):
+            response += chunk
+            yield { "type": "message", "content": chunk }
+        yield { "type": "signal", "content": "chat done" }
+        
+        ids: list[int]= []
+        hints = qachat.extract_suggested_titles_and_metadata_with_llm(response)
+        for hint in hints:
+            title = hint.get("title")
+            keyword = hint.get("keyword")
+            assert(title)
+            if keyword is None:
+                keyword = ""
+            
+            movies_in_db = db_find_movies_by_alias(db, title)
+            
+            # 3. Seems like we didn't have any. We need to find it on the web
+            if len(movies_in_db) == 0:
+                movies_in_db = update_movie_by_tmdb_search(db, search={ "query": title, "primary_release_year": keyword })
+                if len(movies_in_db) == 0:
+                    continue
+            
+            # 여러 movie들이 TMDB에서 나올 수 있음
+            movie = movies_in_db[0]
+            ids.append(movie.id)
+
+        yield { "type": "recommendation", "content": ids }
+    
+    return generator()

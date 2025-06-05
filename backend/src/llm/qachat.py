@@ -339,3 +339,44 @@ async def _stream_response_generator(user_input: str, prompt: str, memory):
 
     # content를 전부 받고 나면, save_context가 호출됩니다
     memory.save_context({"input": user_input}, {"output": full_answer})
+
+suggest_extract_prompt = PromptTemplate.from_template("""
+당신은 영화 전문가 AI 입니다.
+다음 문장에서 AI가 인간에게 추천 해준 영화 제목들을 출력하세요.
+특히 시리즈물이라면 몇 번 시리즈인지 숫자를 기반으로 명확히 구분해주세요.
+만일 문장 안에서 AI가 추천한 영화가 없다면, '없음'이라고 답변하세요.
+각 영화 제목은 , 로 구분하세요.
+각 영화에 대해 다음 정보를 포함하세요:
+
+- 영화 제목
+- 구분 가능한 키워드 또는 정보 (출시년도, 시리즈 번호, 넷플릭스/디즈니 등 플랫폼)
+
+출력 형식: 영화제목1 (키워드1), 영화제목2 (키워드2) ...
+
+예시:
+듄 (2021), 듄 2 (2024), 바비 (마고 로비 주연)
+
+문장: {user_input}
+영화 목록:
+""")
+
+suggest_chain = suggest_extract_prompt | llm
+
+def extract_suggested_titles_and_metadata_with_llm(user_input: str) -> list[dict]:
+    response = suggest_chain.invoke({"user_input": user_input})
+    raw_result = response.content.strip().replace("\n", "")
+    print("[추천된 영화]" + response.content.strip())
+
+    if not raw_result or raw_result.lower() in {"없음", "해당 없음", "모름", "영화 아님"}:
+        return []
+
+    # 결과 파싱: "듄 (2021), 바비 (마고 로비 주연)" 등에서 → [{title: "듄", keyword: "2021"}, ...]
+    entries = [e.strip() for e in raw_result.split(",") if e.strip()]
+    parsed = []
+    for entry in entries:
+        if "(" in entry and ")" in entry:
+            title, keyword = entry.split("(", 1)
+            parsed.append({"title": title.strip(), "keyword": keyword.strip(" )")})
+        else:
+            parsed.append({"title": entry.strip(), "keyword": ""})
+    return parsed

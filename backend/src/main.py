@@ -127,7 +127,8 @@ async def post_message(room_id: int,
                        db: Session = Depends(get_db)):
     
     if not stream:
-        response = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        result = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        response = result["messages"]
         result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
         if result is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
@@ -141,8 +142,12 @@ async def post_message(room_id: int,
         async def event_generator():
             full_answer = ""
             async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
-                full_answer += chunk
-                yield f"data: {json.dumps({'type' : 'message', 'content': chunk})}\n\n"
+                t = chunk.get("type")
+                v = chunk.get("content")
+                if t == "message":
+                    full_answer += cast(str, v)
+
+                yield f"data: {json.dumps(chunk)}\n\n"
 
                 # 버퍼링 방지
                 await asyncio.sleep(0)
@@ -150,9 +155,6 @@ async def post_message(room_id: int,
             if result is None:
                 print("something went wrong...")
 
-            yield f"data: {json.dumps({'type' : 'recommendation', 'content': '매트릭스'})}\n\n"
-
-        
         return StreamingResponse(
             event_generator(),
         )
