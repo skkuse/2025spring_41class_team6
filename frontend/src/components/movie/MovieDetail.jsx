@@ -21,6 +21,12 @@ const MovieDetail = ({ open, onClose, id }) => {
   const [tabIndex, setTabIndex] = useState(0);
   // const [isBookmarked, setIsBookmarked] = useState(false);
 
+  const { mutate: postBookmark } = usePostBookmark();
+  const { mutate: deleteBookmark } = useDeleteBookmark();
+  const { mutate: postArchive } = usePostArchive();
+  const { mutate: putArchive } = usePutArchive();
+  const { mutate: deleteArchive } = useDeleteArchive();
+
   const { data: movie, isLoading } = useMovie(id);
   console.log(movie);
   if (!open) return null;
@@ -28,39 +34,31 @@ const MovieDetail = ({ open, onClose, id }) => {
 
   const tabLabels = ["개요", "출연진"];
 
-  const { mutate: postBookmark } = usePostBookmark();
-  const { mutate: deleteBookmark } = useDeleteBookmark();
-  const { mutate: postArchive } = usePostArchive();
-  const { mutate: putArchive } = usePutArchive();
-  const { mutate: deleteArchive } = useDeleteArchive();
-
   const handleBookmark = () => {
     if (movie.bookmarked) {
       deleteBookmark(id);
-      onClose();
     } else {
       postBookmark(id);
-      onClose();
     }
   };
 
   const handleLike = () => {
     if (movie.rating === 0) {
-      postArchive(id, 5);
+      postArchive({ movieId: id, rating: 5 });
     } else if (movie.rating === 1) {
-      putArchive(id, 5);
+      putArchive({ movieId: id, rating: 5 });
     } else if (movie.rating === 5) {
-      deleteArchive(id);
+      deleteArchive({ movieId: id });
     }
   };
 
   const handleDislike = () => {
     if (movie.rating === 0) {
-      postArchive(id, 1);
+      postArchive({ movieId: id, rating: 1 });
     } else if (movie.rating === 5) {
-      putArchive(id, 1);
+      putArchive({ movieId: id, rating: 1 });
     } else if (movie.rating === 1) {
-      deleteArchive(id);
+      deleteArchive({ movieId: id });
     }
   };
 
