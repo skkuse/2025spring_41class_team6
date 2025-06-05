@@ -171,7 +171,7 @@ async def get_bookmarked(user: UserInfoInternal = Depends(find_user_by_id), db: 
 async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_add_bookmark(db, user.id, payload.id):
         return public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, False) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, True) )
         )
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
@@ -179,7 +179,7 @@ async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depend
 
 @app.delete("/api/movies/bookmarked", response_model=Movie)
 async def delete_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, payload.id, False)
+    movie = db_find_movie_by_id(db, payload.id, True)
 
     if movie and db_rm_bookmark(db, user.id, payload.id):
         return public_movie_info(movie)
@@ -199,7 +199,7 @@ async def get_archive(user: UserInfoInternal = Depends(find_user_by_id), db: Ses
 async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_add_archived(db, user.id, payload.movie_id, payload.rating):
         ret = public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, False) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True) )
         )
         ret.rating = min(5, max(0, payload.rating))
         return ret
@@ -211,7 +211,7 @@ async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends
 async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_update_archived(db, user.id, payload.movie_id, payload.rating):
         ret = public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, False) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True) )
         )
         ret.rating = min(5, max(0, payload.rating))
         return ret
@@ -221,7 +221,7 @@ async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depen
 
 @app.delete("/api/movies/archive", response_model=Movie)
 async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, payload.id, False)
+    movie = db_find_movie_by_id(db, payload.id, True)
     if movie and db_rm_archived(db, user.id, payload.id):
         return public_movie_info(movie)
     else:
@@ -254,21 +254,24 @@ def public_movie_info(internal: MovieInfoInternal) -> Movie:
         rating = movie.rating                                                            if movie.rating else 0,
         ordering = 0,
         genres = movie.genres,
-        chracters = [public_character_info(chara) for chara in movie.characters]
+        characters = [public_character_info(chara) for chara in movie.characters],
+        directors = [public_person_info(crew) for crew in movie.directors]
     )
+
+def public_person_info(internal: PersonInfoInternal) -> Person:
+    return Person(
+        id = internal.id,
+        name = internal.name,
+        profile_image = tmdb_full_image_path(
+            internal.profile_image_path,
+            ImgType.PROFILE,
+            None) if internal.profile_image_path else ""
+    )
+
 
 def public_character_info(internal: CharacterInfoInternal) -> Character:
     return Character(
         id = internal.id,
         name = internal.name,
-        actor = (
-            Actor(
-                id = internal.actor.id,
-                name = internal.actor.name,
-                profile_image = tmdb_full_image_path(
-                    internal.actor.profile_image_path,
-                    ImgType.PROFILE,
-                    None) if internal.actor.profile_image_path else ""
-            ) if internal.actor else None
-        )
+        actor = public_person_info(internal.actor) if internal.actor else None
     )

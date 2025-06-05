@@ -265,7 +265,9 @@ def db_get_bookmarked_movies(db: Session, user_id: int):
     release_date=movie.release_date,
     poster_img_url=movie.poster_img_url,
     trailer_img_url=movie.trailer_img_url,
-    last_update=movie.last_update
+    last_update=movie.last_update,
+    genres=db_get_genres_of_movie(db, movie.id),
+    directors=db_get_directors_of_movie(db, movie.id),
   ) for _, movie in db.execute(stmt).all()]
   
 
@@ -296,6 +298,20 @@ def db_rm_bookmark(db: Session, user_id: int, movie_id: int):
     db.rollback()
     return False
 
+def db_get_genres_of_movie(db: Session, movie_id: int):
+  stmt = (
+    sql.select(m.Genre.name).join(m.MovieGenre, m.Genre.id == m.MovieGenre.genre_id)
+    .where(m.MovieGenre.movie_id == movie_id)
+  )
+  return [cast(str, i) for i in db.execute(stmt).scalars().all()]
+
+def db_get_directors_of_movie(db: Session, movie_id: int):
+  stmt = (
+    sql.select(m.Director).join(m.MovieDirector, m.Director.id == m.MovieDirector.director_id)
+    .where(m.MovieDirector.movie_id == movie_id)
+  )
+  return [PersonInfoInternal(id=i.id, name=i.name, profile_image_path=i.profile_path) for i in db.execute(stmt).scalars().all()]
+
 def db_get_archived_movies(db: Session, user_id: int):
   """
   아카이브된 영화를 불러옵니다.  
@@ -318,7 +334,9 @@ def db_get_archived_movies(db: Session, user_id: int):
     poster_img_url=movie.poster_img_url,
     trailer_img_url=movie.trailer_img_url,
     last_update=movie.last_update,
-    rating=archived.rating # 유저 개인 평점 불러옴
+    rating=archived.rating, # 유저 개인 평점 불러옴
+    genres=db_get_genres_of_movie(db, movie.id),
+    directors=db_get_directors_of_movie(db, movie.id),
   ) for archived, movie in db.execute(stmt).all()]
 
 def db_add_archived(db: Session, user_id: int, movie_id: int, rating: int):
