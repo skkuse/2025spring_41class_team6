@@ -679,3 +679,31 @@ def db_add_movie_reviews(db: Session, id: int, reviews: list[str]):
 # update_movie_by_tmdb_search(asdf, { "query": "아이언맨 3" })
 # print(find_movies_by_alias(asdf, "기생충"))
 # asdf.close()
+
+def db_add_recommended_movies(db: Session, chat_id: int, movie_ids: list[int]):
+  stmt = sql.insert(m.RecommendedMovie)
+  values = [{"chat_id": chat_id, "movie_id": i} for i in movie_ids]
+
+  db.execute(stmt, values)
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
+def db_get_recommended_movies(db: Session, room_id: int):
+  q_chats = (
+    sql.select(m.ChatHistory.id).where(m.ChatHistory.room_id == room_id)
+    .order_by(m.ChatHistory.timestamp.asc())
+  )
+  
+  movies_list: list[list[MovieInfoInternal]]= []
+  for i in db.execute(q_chats).scalars().all():
+    stmt = (
+      sql.select(m.Movie).join(m.RecommendedMovie, m.RecommendedMovie.movie_id == m.Movie.id)
+      .where(m.RecommendedMovie.chat_id == i)
+    )
+    movies_list.append([MovieInfoInternal.model_validate(movie) for movie in db.execute(stmt).scalars().all()])
+  
+  return movies_list
