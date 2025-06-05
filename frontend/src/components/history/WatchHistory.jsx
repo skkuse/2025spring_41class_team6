@@ -1,14 +1,17 @@
-import React from "react";
 import MovieCard from "@/components/movie/MovieCard";
-import { getMovies } from "@/apis/testApi";
 import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
 import ThumbDownAltOutlinedIcon from "@mui/icons-material/ThumbDownAltOutlined";
+import { useGetArchiveList } from "@/hooks/movie/useArchive";
 
 const WatchHistory = () => {
-  // 임시 분류: id 홀수는 좋아요, 짝수는 싫어요
-  const movies = getMovies();
-  const likedMovies = movies.filter((movie) => movie.id % 2 === 1);
-  const dislikedMovies = movies.filter((movie) => movie.id % 2 === 0);
+  const { data: archiveList, isLoading } = useGetArchiveList();
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  const likedMovies = archiveList.filter((movie) => movie.rating === 5);
+  const dislikedMovies = archiveList.filter((movie) => movie.rating === 0);
 
   return (
     <div className="p-8">
@@ -21,7 +24,14 @@ const WatchHistory = () => {
         <div className="flex gap-4 overflow-x-auto w-full pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           {likedMovies.map((movie) => (
             <div className="flex-shrink-0" key={movie.id}>
-              <MovieCard {...movie} />
+              <MovieCard
+                id={movie.id}
+                title={movie.title}
+                year={movie.release_date}
+                director={movie.directors[0].name}
+                description={movie.overview}
+                imageUrl={movie.poster_img_url}
+              />
             </div>
           ))}
         </div>
@@ -35,7 +45,14 @@ const WatchHistory = () => {
         <div className="flex gap-4 overflow-x-auto w-full pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           {dislikedMovies.map((movie) => (
             <div className="flex-shrink-0" key={movie.id}>
-              <MovieCard {...movie} />
+              <MovieCard
+                id={movie.id}
+                title={movie.title}
+                year={movie.release_date}
+                director={movie.directors[0].name}
+                description={movie.overview}
+                imageUrl={movie.poster_img_url}
+              />
             </div>
           ))}
         </div>
