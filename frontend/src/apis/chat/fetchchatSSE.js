@@ -35,7 +35,13 @@ const fetchChatSSE = async (roomId, content, onToken, onDone, onError) => {
           if (data) {
             try {
               const parsed = JSON.parse(data);
-              onToken(parsed);
+              console.log(parsed.type);
+
+              if (parsed.type === "recommendation") {
+                console.log(parsed.content);
+              }
+
+              onToken(parsed.content);
             } catch {
               onToken(data);
             }
