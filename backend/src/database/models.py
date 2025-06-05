@@ -41,6 +41,7 @@ TABLE_GENRE             = "genres"
 TABLE_ACTOR             = "actors"
 TABLE_PLATFORM          = "platforms"
 TABLE_MOVIE_ALIAS       = "movie_aliases"
+TABLE_MOVIE_REVIEW      = "movie_reviews"
 REL_MOVIE_GENRE         = "rel_movie_genres"
 REL_MOVIE_ACTOR         = "rel_movie_actors"
 REL_MOVIE_PLATFORM      = "rel_movie_platforms"
@@ -67,6 +68,14 @@ class Movie(Base):
     poster_img_url  : Mapped[Optional[str]]
     trailer_img_url : Mapped[Optional[str]]
     last_update     : Mapped[datetime]      = mapped_column(DateTime(timezone=True), nullable=False, default=current_time)
+
+class MovieReview(Base):
+    """쿼리 성능 최적화를 위해 별도 분리"""
+    __tablename__ = TABLE_MOVIE_REVIEW
+    id       : Mapped[int] = mapped_column(primary_key=True)
+    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), nullable=False)
+    text     : Mapped[str] = mapped_column(nullable=False)
+
 
 @event.listens_for(Movie, "before_update", propagate=True)
 def auto_update_last_modified(mapper, connection, target: Movie):
@@ -119,6 +128,7 @@ class CharacterProfile(Base):
     description    : Mapped[str]      = mapped_column(nullable=False)
     tone           : Mapped[str]      = mapped_column(nullable=False)
     other_features : Mapped[Optional[str]]
+    actor_id       : Mapped[Optional[int]] = mapped_column(ForeignKey(fk(TABLE_ACTOR), ondelete="SET NULL"))
 
 class Genre(Base):
     __tablename__ = TABLE_GENRE
@@ -127,8 +137,11 @@ class Genre(Base):
 
 class Actor(Base):
     __tablename__ = TABLE_ACTOR
-    id   : Mapped[int]  = mapped_column(primary_key=True)
-    name : Mapped[str]  = mapped_column(nullable=False)
+    id            : Mapped[int]  = mapped_column(primary_key=True)
+    tmdb_id       : Mapped[int]  = mapped_column(unique=True, nullable=False)
+    name          : Mapped[str]  = mapped_column(nullable=False)
+    original_name : Mapped[str]  = mapped_column(nullable=False)
+    profile_path  : Mapped[Optional[str]]
 
 class Platform(Base):
     __tablename__ = TABLE_PLATFORM

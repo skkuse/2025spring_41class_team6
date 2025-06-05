@@ -35,6 +35,19 @@ class ChatHistoryInternal(BaseModel):
   timestamp: datetime
   model_config = ConfigDict(from_attributes=True)
 
+class PersonInfoInternal(BaseModel):
+  id: int
+  name: str
+  profile_image_path: Optional[str]
+
+
+class CharacterInfoInternal(BaseModel):
+  id: int
+  name: str
+  tone: str
+  description: str
+  actor: Optional[PersonInfoInternal] = None
+
 class MovieInfoInternal(BaseModel):
   id: int
   tmdb_id: int
@@ -45,6 +58,10 @@ class MovieInfoInternal(BaseModel):
   poster_img_url: Optional[str]
   trailer_img_url: Optional[str]
   last_update: datetime
+  genres: List[str] = []
+  characters: List[CharacterInfoInternal] = []
+  directors: List[PersonInfoInternal] = []
+  rating: Optional[int] = None
   model_config = ConfigDict(from_attributes=True)
 
 class ChatRoomContext(BaseModel):
@@ -77,7 +94,6 @@ def db_create_new_user(db: Session, email: str, password: str, nickname: str):
   except:
     db.rollback()
     return None
-
 
 def db_find_user(db: Session, email: str) -> UserInfoInternal|None:
   """email을 key로 DB에서 user 정보 불러옴"""
@@ -227,19 +243,98 @@ def db_get_chatroom_context(db: Session, room_id: int) -> ChatRoomContext:
     summary=result
   )
 
-def db_get_bookmarked_movies(db: Session):
-  raise NotImplementedError
 
-def db_add_bookmark(db: Session, id: int):
-  raise NotImplementedError
+def db_get_bookmarked_movies(db: Session, user_id: int):
+  """
+  북마크된 영화를 불러옵니다.  
+  genre, character, platform 등의 정보가 필요하다면
+  db_find_movie_id를 추가로 사용하시면 됩니다.
+  만약 너무 불편하다면 말씀해주세요
+  """
+  stmt = (
+    sql.select(m.BookmarkedMovie, m.Movie)
+    .where(m.BookmarkedMovie.user_id == user_id)
+    .join(m.Movie, m.Movie.id == m.BookmarkedMovie.movie_id)
+  )
+  return [MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=movie.tmdb_id,
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update
+  ) for _, movie in db.execute(stmt).all()]
+  
 
-def db_rm_bookmark(db: Session, id: int):
-  raise NotImplementedError
+def db_add_bookmark(db: Session, user_id: int, movie_id: int):
+  stmt = (
+    sql.insert(m.BookmarkedMovie)
+    .values(movie_id = movie_id, user_id = user_id)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except IntegrityError:
+    db.rollback()
+    return False
 
-def db_find_movie_by_id(db: Session, id: int):
+def db_rm_bookmark(db: Session, user_id: int, movie_id: int):
+  stmt = (
+    sql.delete(m.BookmarkedMovie)
+    .where(m.BookmarkedMovie.movie_id == movie_id)
+    .where(m.BookmarkedMovie.user_id == user_id)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except IntegrityError:
+    db.rollback()
+    return False
+
+
+def db_find_movie_by_id(db: Session, id: int, verbose: bool = True) -> MovieInfoInternal|None:
   stmt = sql.select(m.Movie).where(m.Movie.id == id)
   movie = db.execute(stmt).scalar_one_or_none()
-  return orm_to_dict(movie)
+  if movie is None:
+    return None
+  
+  genres = []
+  directors = []
+  characters = []
+  if verbose:
+    stmt_genre = sql.select(m.Genre).join(m.MovieGenre, m.Genre.id == m.MovieGenre.genre_id).where(m.MovieGenre.movie_id == id)
+    stmt_director = sql.select(m.Director).join(m.MovieDirector, m.Director.id == m.MovieDirector.director_id).where(m.MovieDirector.movie_id == id)
+    stmt_chara = sql.select(m.CharacterProfile, m.Actor).where(m.CharacterProfile.movie_id == id).outerjoin(m.Actor, m.CharacterProfile.actor_id == m.Actor.id)
+
+    genres = [i.name for i in db.scalars(stmt_genre).all()]
+    directors = [PersonInfoInternal(id = i.id, name = i.name, profile_image_path=i.profile_path) for i in db.scalars(stmt_director).all()]
+    characters = [CharacterInfoInternal(
+      id = character.id,
+      name = character.name,
+      tone = character.tone,
+      description = character.description,
+      actor = PersonInfoInternal(id = actor.id, name = actor.name, profile_image_path = actor.profile_path) if actor is not None else None
+    ) for character, actor in db.execute(stmt_chara).all()]
+
+  return MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=cast(int, movie.tmdb_id),
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update,
+    genres=genres,
+    directors=directors,
+    characters=characters
+  )
 
 def db_find_movie_by_tmdb_id(db: Session, tmdb_id: int):
   stmt = sql.select(m.Movie).where(m.Movie.tmdb_id == tmdb_id)
@@ -289,6 +384,21 @@ def _upsert_director(db: Session, director: DirectorInfo):
   db.add(doc)
   return doc
 
+def _upsert_actor(db: Session, actor: ActorInfo):
+  stmt = sql.select(m.Actor).where(m.Actor.tmdb_id == actor.person_id)
+  result = db.execute(stmt).scalar_one_or_none()
+  if result:
+    return result
+  
+  doc = m.Actor(
+    tmdb_id = actor.person_id,
+    name = actor.name,
+    original_name = actor.original_name,
+    profile_path = actor.profile_path
+  )
+  db.add(doc)
+  return doc
+
 def _upsert_platform(db: Session, platform: PlatformInfo):
   stmt = sql.select(m.Platform).where(m.Platform.tmdb_id == platform.tmdb_id)
   result = db.execute(stmt).scalar_one_or_none()
@@ -322,9 +432,11 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
     stmt1 = sql.delete(m.MovieGenre).where(m.MovieGenre.movie_id == result.id)
     stmt2 = sql.delete(m.MovieDirector).where(m.MovieDirector.movie_id == result.id)
     stmt3 = sql.delete(m.MoviePlatform).where(m.MoviePlatform.movie_id == result.id)
+    stmt4 = sql.delete(m.MovieActor).where(m.MovieActor.movie_id == result.id)
     db.execute(stmt1)
     db.execute(stmt2)
     db.execute(stmt3)
+    db.execute(stmt4)
     doc = result
     
   else:
@@ -341,7 +453,22 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
   pending_genres = [_upsert_genre(db, i) for i in tmdb_data.genres]
   pending_directors = [_upsert_director(db, i) for i in tmdb_data.directors]
   pending_platforms = [_upsert_platform(db, i) for i in tmdb_data.platforms]
+  
+  pending_actors = [(_upsert_actor(db, i), idx) for idx, i in enumerate(tmdb_data.casts)]
   db.flush()
+
+  # 캐릭터를 추가함 (begin)
+  for a, i in pending_actors:
+    cast_info = tmdb_data.casts[i]
+    ch = m.CharacterProfile(
+      movie_id = doc.id,
+      name = cast_info.character,
+      description = "",
+      tone = "",
+      actor_id = a.id
+    )
+    db.add(ch)
+  # 캐릭터를 추가함 (end)
 
   movie_id = doc.id
   for g in pending_genres:
@@ -352,6 +479,9 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
     db.add(rel)
   for p in pending_platforms:
     rel = m.MoviePlatform(platform_id=p.id, movie_id=movie_id)
+    db.add(rel)
+  for a, _ in pending_actors:
+    rel = m.MovieActor(actor_id=a.id, movie_id=movie_id)
     db.add(rel)
 
   try:
@@ -410,6 +540,46 @@ def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: 
     
   return datas
 
+def db_update_wikipedia_data(db: Session, id: int, wiki_data: str):
+  stmt = (
+    sql.update(m.Movie).where(m.Movie.id == id)
+    .values(wiki_document=wiki_data)
+  )
+  db.execute(stmt)
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
+def db_get_movie_reviews(db: Session, id: int, limit: int|None) -> list[str]:
+  if limit:
+    stmt = (
+      sql.select(m.MovieReview.text)
+      .where(m.MovieReview.id == id)
+      .limit(limit)
+    )
+  else:
+    stmt = (
+      sql.select(m.MovieReview.text)
+      .where(m.MovieReview.id == id)
+    )
+
+  return [i for i in db.execute(stmt).scalars().all()]
+
+def db_add_movie_reviews(db: Session, id: int, reviews: list[str]):
+  for i in reviews:
+    doc = m.MovieReview(movie_id = id, text = i)
+    db.add(doc)
+  
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
 # asdf = m.SessionLocal()
 # update_movie_by_tmdb_search(asdf, { "query": "기생충" })
 # update_movie_by_tmdb_search(asdf, { "query": "마인크래프트 무비" })
@@ -417,32 +587,3 @@ def update_movie_by_tmdb_search(db: Session, search: TmdbSearchMovieArgs, lang: 
 # update_movie_by_tmdb_search(asdf, { "query": "아이언맨 3" })
 # print(find_movies_by_alias(asdf, "기생충"))
 # asdf.close()
-
-# 북마킹 기능들
-def find_user_bookmarked(db: Session, user_id: int):
-  raise NotImplementedError
-
-def bookmark_user_movies(db: Session, user_id: int, movie_id: int):
-  doc = m.BookmarkedMovie(movie_id=movie_id, user_id=user_id)
-  db.add(doc)
-  try:
-    db.commit()
-    print("log - bookmark_user_movies: success")
-    return True
-  except IntegrityError as e:
-    db.rollback()
-    msg = str(e.orig).lower()
-    print("error - bookmark_user_movies: IntegrityError")
-    print(msg)
-    return False
-  except Exception:
-    db.rollback()
-    print("error - bookmark_user_movies: other")
-    raise
-
-# 아카이빙 기능들
-def find_user_archived(user_id: int):
-  raise NotImplementedError
-
-def archive_user_movies(user_id: int, movie_id: int, rating: int):
-  raise NotImplementedError
