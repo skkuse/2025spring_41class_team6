@@ -201,12 +201,14 @@ const ChatRoom = () => {
             <BookmarkBorderIcon className="w-5 h-5" />
             <span className="text-sm font-medium">북마크</span>
           </button>
-          <button
-            onClick={() => setIsMovieRecommendOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
-          >
-            <MenuOpenIcon className="w-5 h-5" />
-          </button>
+          {!isMovieRecommendOpen && (
+            <button
+              onClick={() => setIsMovieRecommendOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
+            >
+              <MenuOpenIcon className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* 채팅 메시지 영역 */}

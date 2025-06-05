@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
 import Tabs from "@mui/material/Tabs";
@@ -8,16 +8,18 @@ import CloseIcon from "@mui/icons-material/Close";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
 import ThumbDownAltOutlinedIcon from "@mui/icons-material/ThumbDownAltOutlined";
-import { getMovie } from "@/apis/testApi";
+import useMovie from "@/hooks/movie/useMovie";
+import ActorCard from "@/components/movie/ActorCard";
 const MovieDetail = ({ open, onClose, id }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [isDisliked, setIsDisliked] = useState(false);
 
+  const { data: movie, isLoading } = useMovie(id);
   if (!open) return null;
+  if (isLoading) return <div>Loading...</div>;
 
-  const data = getMovie(id);
+  const isLiked = movie.rating > 3;
+
   const tabLabels = ["개요", "출연진"];
 
   return (
@@ -40,10 +42,10 @@ const MovieDetail = ({ open, onClose, id }) => {
         <div className="flex gap-8 mb-6">
           {/* 포스터 */}
           <div className="w-[300px] h-[450px] bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-            {data.imageUrl ? (
+            {movie.poster_img_url ? (
               <img
-                src={data.imageUrl}
-                alt={data.title}
+                src={movie.poster_img_url}
+                alt={movie.title}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -57,14 +59,14 @@ const MovieDetail = ({ open, onClose, id }) => {
           <div className="flex-1 flex flex-col">
             <div>
               <h2 id="movie-modal-title" className="text-2xl font-bold mb-2">
-                {data.title}
+                {movie.title}
               </h2>
               <div className="text-gray-500 text-sm mb-4">
-                <span>{data.year}</span> · <span>{data.director}</span> ·{" "}
-                <span>⭐ {data.rating}</span>
+                <span>{movie.release_date}</span> ·{" "}
+                <span>{movie.directors[0].name}</span> ·{" "}
               </div>
               <div className="flex flex-wrap gap-2 mb-4">
-                {data.genres.map((genre, idx) => (
+                {movie.genres.map((genre, idx) => (
                   <span
                     key={idx}
                     className="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-700"
@@ -74,7 +76,7 @@ const MovieDetail = ({ open, onClose, id }) => {
                 ))}
               </div>
               <p className="text-gray-700 text-base leading-relaxed">
-                {data.description}
+                {movie.overview}
               </p>
             </div>
 
@@ -92,10 +94,7 @@ const MovieDetail = ({ open, onClose, id }) => {
                 <span className="text-sm font-medium">북마크</span>
               </button>
               <button
-                onClick={() => {
-                  setIsLiked(!isLiked);
-                  if (isLiked) setIsDisliked(false);
-                }}
+                onClick={() => {}}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
                   isLiked
                     ? "bg-green-50 border-green-200 text-green-600"
@@ -106,12 +105,9 @@ const MovieDetail = ({ open, onClose, id }) => {
                 <span className="text-sm font-medium">좋아요</span>
               </button>
               <button
-                onClick={() => {
-                  setIsDisliked(!isDisliked);
-                  if (isDisliked) setIsLiked(false);
-                }}
+                onClick={() => {}}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  isDisliked
+                  !isLiked
                     ? "bg-red-50 border-red-200 text-red-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}
@@ -146,20 +142,31 @@ const MovieDetail = ({ open, onClose, id }) => {
             <div>
               <h4 className="font-semibold mb-1">줄거리</h4>
               <p className="text-gray-700 text-base leading-relaxed">
-                {data.overview}
+                {movie.overview}
               </p>
             </div>
           )}
           {tabIndex === 1 && (
             <div>
-              <h4 className="font-semibold mb-1">출연진</h4>
-              <ul className="list-disc pl-5 text-gray-700">
-                {data.cast.map((actor, idx) => (
-                  <li key={idx}>
-                    {actor.name} - {actor.role}
-                  </li>
-                ))}
-              </ul>
+              <h2 className="text-2xl font-bold mb-4">출연진</h2>
+              <div className="flex flex-wrap gap-4 justify-center">
+                {movie.characters.length === 0 ? (
+                  <div className="text-gray-500">출연진 정보가 없습니다.</div>
+                ) : (
+                  movie.characters.map((character, idx) => (
+                    <div
+                      key={idx}
+                      className="w-[200px] flex flex-col items-center bg-white rounded-lg shadow-md overflow-hidden"
+                    >
+                      <ActorCard
+                        character_name={character.name}
+                        actor_name={character.actor.name}
+                        image_url={character.actor.profile_image}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </Box>

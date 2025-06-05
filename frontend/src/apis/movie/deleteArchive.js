@@ -1,7 +1,7 @@
-import axiosInstance from "@/apis/utils/axiosInterceptor";
+import { axiosInterceptor } from "@/apis/utils/axiosInterceptor";
 
 const deleteArchive = async (movieId) => {
-  const response = await axiosInstance.delete(`/api/movies/archive`, {
+  const response = await axiosInterceptor.delete(`/movies/archive`, {
     id: movieId,
   });
   return response.data;

@@ -24,10 +24,10 @@ axiosInterceptor.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response.status === 422) {
-      vanillaAxios.post("auth/logout");
-      window.location.href = "/";
-    }
+    // if (error.response.status === 422) {
+    //   vanillaAxios.post("auth/logout");
+    //   window.location.href = "/";
+    // }
     console.log(error);
     return Promise.reject(error);
   }

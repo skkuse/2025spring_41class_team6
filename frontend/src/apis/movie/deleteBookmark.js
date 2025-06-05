@@ -1,7 +1,7 @@
-import axiosInstance from "@/apis/utils/axiosInterceptor";
+import { axiosInterceptor } from "@/apis/utils/axiosInterceptor";
 
 const deleteBookmark = async (movieId) => {
-  const response = await axiosInstance.delete(`/api/movies/bookmarked`, {
+  const response = await axiosInterceptor.delete(`/movies/bookmarked`, {
     id: movieId,
   });
   return response.data;

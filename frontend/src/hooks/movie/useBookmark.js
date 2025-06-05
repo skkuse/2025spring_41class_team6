@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { getBookmarkList } from "../../apis/movie/getBookmarkList";
+import getBookmarkList from "@/apis/movie/getBookmarkList";
 
 const useBookmarkList = () => {
   return useQuery({

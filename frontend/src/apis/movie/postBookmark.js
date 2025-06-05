@@ -1,7 +1,7 @@
-import axiosInstance from "@/apis/utils/axiosInterceptor";
+import { axiosInterceptor } from "@/apis/utils/axiosInterceptor";
 
 const postBookmark = async (movieId) => {
-  const response = await axiosInstance.post(`/api/movies/bookmarked`, {
+  const response = await axiosInterceptor.post(`/movies/bookmarked`, {
     id: movieId,
   });
   return response.data;

@@ -1,7 +1,7 @@
-import axiosInstance from "@/apis/utils/axiosInterceptor";
+import { axiosInterceptor } from "@/apis/utils/axiosInterceptor";
 
 const putArchive = async (movieId, rating) => {
-  const response = await axiosInstance.put(`/api/movies/archive`, {
+  const response = await axiosInterceptor.put(`/movies/archive`, {
     id: movieId,
     rating: rating,
   });
