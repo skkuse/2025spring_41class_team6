@@ -6,7 +6,8 @@ import CircularProgress from "@mui/material/CircularProgress";
 import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import fetchChatSSE from "@/apis/chat/fetchchatSSE";
-
+import MarkdownChat from "@/components/chat/MarkdownChat";
+import SendMessage from "@/components/chat/SendMessage";
 // --- (1) 버퍼링 + slice 방식 타이핑 애니메이션 구현 ---
 
 const ChatRoom = () => {
@@ -23,7 +24,16 @@ const ChatRoom = () => {
   const { data: messages, isLoading } = useMessagesList(chatId);
   const messagesEndRef = useRef(null);
 
-  const TYPING_DELAY = 70; // ms
+  const getRandomTypingDelay = () => {
+    const randomVariation = Math.random();
+    if (randomVariation < 0.4) {
+      return 20;
+    } else if (randomVariation < 0.85) {
+      return 70;
+    } else {
+      return 150;
+    }
+  };
   // 타이핑 애니메이션 - Interval 방식
   useEffect(() => {
     if (!isStreaming) return;
@@ -33,7 +43,7 @@ const ChatRoom = () => {
         const token = tokenQueue.current.shift();
         setDisplayedMessage((prev) => prev + token);
       }
-    }, TYPING_DELAY); // 더 짧은 간격으로 체크
+    }, getRandomTypingDelay()); // 더 짧은 간격으로 체크
 
     return () => clearInterval(interval);
   }, [isStreaming]);
@@ -56,9 +66,6 @@ const ChatRoom = () => {
         chatId,
         message,
         async (token) => {
-          console.log("Received token:", JSON.stringify(token));
-          console.log("Token length:", token.length);
-          console.log("Has spaces:", token.includes(" "));
           tokenQueue.current.push(token);
         },
         async () => {
@@ -104,33 +111,23 @@ const ChatRoom = () => {
             <CircularProgress />
           </div>
         ) : (
-          <div className="flex flex-col gap-8 w-140 mx-auto p-4">
+          <div className="flex flex-col gap-8 w-160 mx-auto p-4">
             {messages.map((msg, idx) => (
               <div key={idx} className="flex flex-col gap-8 max-w-[600px]">
-                {msg.user_message && (
-                  <span className="text-left bg-gray-100 p-3 rounded-lg">
-                    {msg.user_message}
-                  </span>
-                )}
+                {msg.user_message && <SendMessage message={msg.user_message} />}
                 {msg.ai_message && (
-                  <span className="text-right bg-blue-100 p-3 rounded-lg">
-                    {msg.ai_message}
+                  <span className="p-3 rounded-lg">
+                    <MarkdownChat>{msg.ai_message}</MarkdownChat>
                   </span>
                 )}
               </div>
             ))}
             {/* 임시 메시지: 내가 막 보낸 것 */}
-            {sendMessage && (
-              <span className="text-left bg-gray-200 p-3 rounded-lg opacity-70 animate-pulse">
-                {sendMessage}
-              </span>
-            )}
+            {sendMessage && <SendMessage message={sendMessage} />}
             {/* 스트리밍 중인 메시지: LLM 답변 (애니메이션) */}
             {displayedMessage && (
-              <span className="text-right bg-blue-200 p-3 rounded-lg opacity-90 animate-pulse border border-blue-400 shadow-md transition-all duration-200">
-                {displayedMessage}
-                {/* 커서 애니메이션 효과 */}
-                <span className="inline-block w-2 h-5 align-middle bg-blue-400 animate-blink ml-1 rounded-sm" />
+              <span className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
+                <MarkdownChat>{displayedMessage}</MarkdownChat>
               </span>
             )}
             <div ref={messagesEndRef} />
@@ -158,19 +155,6 @@ const ChatRoom = () => {
           </button>
         </div>
       </div>
-      {/* 블링크 커서 애니메이션 keyframes */}
-      <style>
-        {`
-        @keyframes blink {
-          0% { opacity: 1 }
-          50% { opacity: 0.2 }
-          100% { opacity: 1 }
-        }
-        .animate-blink {
-          animation: blink 1s steps(1) infinite;
-        }
-        `}
-      </style>
     </div>
   );
 };
