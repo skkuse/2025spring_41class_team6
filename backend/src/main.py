@@ -142,14 +142,15 @@ async def post_message(room_id: int,
             async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
                 full_answer += chunk
                 yield f"data: {chunk}\n\n"
-        
+
+                # 버퍼링 방지
+                await asyncio.sleep(0)
             result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
             if result is None:
                 print("something went wrong...")
         
         return StreamingResponse(
             event_generator(),
-            media_type="text/event-stream"
         )
 
 
