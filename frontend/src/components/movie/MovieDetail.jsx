@@ -18,7 +18,6 @@ const MovieDetail = ({ open, onClose, id }) => {
   if (!open) return null;
 
   const data = getMovie(id);
-  console.log(data);
   const tabLabels = ["개요", "출연진", "나의 리뷰"];
 
   return (

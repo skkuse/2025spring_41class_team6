@@ -3,94 +3,188 @@ import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import SendIcon from "@mui/icons-material/Send";
 import useMessagesList from "@/hooks/chat/useMessagesList";
 import CircularProgress from "@mui/material/CircularProgress";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import fetchChatSSE from "@/apis/chat/fetchchatSSE";
 import MarkdownChat from "@/components/chat/MarkdownChat";
-import SendMessage from "@/components/chat/SendMessage";
-// --- (1) 버퍼링 + slice 방식 타이핑 애니메이션 구현 ---
+import SendChat from "@/components/chat/SendChat";
+import LoadingChat from "@/components/chat/LoadingChat";
+
+// 메모이제이션된 메시지 컴포넌트
+const MemoizedMessage = memo(({ msg }) => (
+  <div className="flex flex-col gap-8 max-w-[600px]">
+    {msg.user_message && <SendChat message={msg.user_message} />}
+    {msg.ai_message && (
+      <span className="p-3 rounded-lg">
+        <MarkdownChat>{msg.ai_message}</MarkdownChat>
+      </span>
+    )}
+  </div>
+));
 
 const ChatRoom = () => {
   const [message, setMessage] = useState("");
   const [sendMessage, setSendMessage] = useState("");
-  const [fullReceiveMessage, setFullReceiveMessage] = useState(""); // 누적된 실제 답변(전체)
-  const [displayedMessage, setDisplayedMessage] = useState(""); // 화면에 보여줄 (천천히 늘어남)
+  const [displayedMessage, setDisplayedMessage] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const queryClient = useQueryClient();
-  const tokenQueue = useRef([]); // ← 토큰 큐
+  const tokenQueue = useRef([]);
+  const animationFrameId = useRef(null);
+  const lastScrollTime = useRef(0);
 
   const navigate = useNavigate();
   const { chatId } = useParams();
   const { data: messages, isLoading } = useMessagesList(chatId);
   const messagesEndRef = useRef(null);
+  const containerRef = useRef(null);
 
-  const getRandomTypingDelay = () => {
+  const getRandomTypingDelay = useCallback(() => {
     const randomVariation = Math.random();
-    if (randomVariation < 0.4) {
-      return 20;
-    } else if (randomVariation < 0.85) {
-      return 70;
-    } else {
-      return 150;
+    if (randomVariation < 0.4) return 20;
+    else if (randomVariation < 0.85) return 70;
+    else return 150;
+  }, []);
+
+  // 스크롤 최적화 - debounce와 requestAnimationFrame 사용
+  const scrollToBottom = useCallback(() => {
+    const now = Date.now();
+    if (now - lastScrollTime.current < 100) return; // 100ms 디바운스
+
+    lastScrollTime.current = now;
+    if (animationFrameId.current) {
+      cancelAnimationFrame(animationFrameId.current);
     }
-  };
-  // 타이핑 애니메이션 - Interval 방식
+
+    animationFrameId.current = requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
+  }, []);
+
+  // 타이핑 애니메이션 최적화
   useEffect(() => {
     if (!isStreaming) return;
 
-    const interval = setInterval(() => {
-      if (tokenQueue.current.length > 0) {
-        const token = tokenQueue.current.shift();
-        setDisplayedMessage((prev) => prev + token);
+    let animationId;
+    let lastTime = 0;
+
+    const animate = (currentTime) => {
+      if (currentTime - lastTime >= getRandomTypingDelay()) {
+        if (tokenQueue.current.length > 0) {
+          // 한 번에 여러 토큰 처리하여 성능 개선
+          const tokensToAdd = tokenQueue.current.splice(
+            0,
+            Math.min(3, tokenQueue.current.length)
+          );
+          setDisplayedMessage((prev) => prev + tokensToAdd.join(""));
+        }
+        lastTime = currentTime;
       }
-    }, getRandomTypingDelay()); // 더 짧은 간격으로 체크
 
-    return () => clearInterval(interval);
-  }, [isStreaming]);
+      if (isStreaming || tokenQueue.current.length > 0) {
+        animationId = requestAnimationFrame(animate);
+      }
+    };
 
-  // 스크롤 항상 맨 아래로
+    animationId = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationId) cancelAnimationFrame(animationId);
+    };
+  }, [isStreaming, getRandomTypingDelay]);
+
+  // 스크롤 이벤트 최적화 - 의존성 분리
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sendMessage, displayedMessage, isStreaming]);
+    scrollToBottom();
+  }, [messages?.length, scrollToBottom]);
+  // 임시 메시지 전송 시 스크롤
+  useEffect(() => {
+    if (sendMessage) {
+      scrollToBottom();
+    }
+  }, [sendMessage, scrollToBottom]);
 
-  // 메시지 전송
-  const handleSendMessage = async () => {
-    if (message.trim() && !isStreaming) {
-      setSendMessage(message);
-      setDisplayedMessage(""); // 화면 초기화
+  // 스트리밍 중일 때만 스크롤
+  useEffect(() => {
+    if (isStreaming && displayedMessage) {
+      scrollToBottom();
+    }
+  }, [displayedMessage, isStreaming, scrollToBottom]);
+
+  // 메시지 전송 - ref를 사용하여 최신 값 참조
+  const messageRef = useRef(message);
+  messageRef.current = message;
+
+  const handleSendMessage = useCallback(async () => {
+    const currentMessage = messageRef.current;
+    if (currentMessage.trim() && !isStreaming) {
+      setSendMessage(currentMessage);
+      setDisplayedMessage("");
       setIsStreaming(true);
       setMessage("");
-      tokenQueue.current = []; // 새로 시작할 때 큐 비우기
+      tokenQueue.current = [];
 
-      await fetchChatSSE(
-        chatId,
-        message,
-        async (token) => {
-          tokenQueue.current.push(token);
-        },
-        async () => {
-          setSendMessage("");
-          setFullReceiveMessage("");
-          setTimeout(() => setDisplayedMessage(""), 400); // 애니메이션 잔상 살짝 유지
-          setIsStreaming(false);
-          await queryClient.invalidateQueries(["chatMessages", chatId]);
-        },
-        (err) => {
-          setIsStreaming(false);
-          setSendMessage("");
-          setDisplayedMessage("");
-          alert("에러! " + err.message);
-        }
-      );
+      try {
+        await fetchChatSSE(
+          chatId,
+          currentMessage,
+          async (token) => {
+            tokenQueue.current.push(token);
+          },
+          async () => {
+            setSendMessage("");
+            setDisplayedMessage("");
+            setIsStreaming(false);
+            // 배치 업데이트로 리렌더링 최소화
+            queryClient.invalidateQueries(["messagesList", chatId]);
+          },
+          (err) => {
+            setIsStreaming(false);
+            setSendMessage("");
+            setDisplayedMessage("");
+            alert("에러! " + err.message);
+          }
+        );
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        setIsStreaming(false);
+        setSendMessage("");
+        setDisplayedMessage("");
+      }
     }
-  };
+  }, [isStreaming, chatId, queryClient]); // message 의존성 제거
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
+  // handleKeyPress를 독립적으로 만들어 재생성 방지
+  const handleKeyPress = useCallback(
+    (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSendMessage();
+      }
+    },
+    [handleSendMessage]
+  );
+
+  // 메시지 리스트 메모이제이션
+  const messagesList = useMemo(
+    () =>
+      messages?.map((msg, idx) => (
+        <MemoizedMessage
+          key={`${msg.id || idx}-${msg.timestamp || ""}`}
+          msg={msg}
+        />
+      )),
+    [messages]
+  );
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+      tokenQueue.current = [];
+    };
+  }, []);
 
   return (
     <div className="flex flex-1 flex-col bg-white h-full">
@@ -98,50 +192,47 @@ const ChatRoom = () => {
       <div className="flex justify-end p-6">
         <button
           onClick={() => navigate("/history")}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition "
+          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
         >
           <BookmarkBorderIcon className="w-5 h-5" />
           <span className="text-sm font-medium">북마크</span>
         </button>
       </div>
+
       {/* 채팅 메시지 영역 */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <CircularProgress />
           </div>
         ) : (
           <div className="flex flex-col gap-8 w-160 mx-auto p-4">
-            {messages.map((msg, idx) => (
-              <div key={idx} className="flex flex-col gap-8 max-w-[600px]">
-                {msg.user_message && <SendMessage message={msg.user_message} />}
-                {msg.ai_message && (
-                  <span className="p-3 rounded-lg">
-                    <MarkdownChat>{msg.ai_message}</MarkdownChat>
-                  </span>
-                )}
-              </div>
-            ))}
+            {/* 메모이제이션된 메시지 리스트 */}
+            {messagesList}
+
             {/* 임시 메시지: 내가 막 보낸 것 */}
-            {sendMessage && <SendMessage message={sendMessage} />}
-            {/* 스트리밍 중인 메시지: LLM 답변 (애니메이션) */}
+            {sendMessage && <SendChat message={sendMessage} />}
+
+            {/* 스트리밍 중인 메시지 */}
             {displayedMessage && (
-              <span className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
+              <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
                 <MarkdownChat>{displayedMessage}</MarkdownChat>
-              </span>
+              </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
         )}
       </div>
-      {/* 하단 입력창 */}
+
+      {/* 하단 입력창 - 별도 컴포넌트로 분리하면 더 좋음 */}
       <div className="w-full border-t border-[#ececec] p-4 flex items-center justify-center bg-white mb-4">
         <div className="w-3/4 flex items-center">
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             className="flex-1 border border-[#ececec] rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
             placeholder="메시지를 입력하세요..."
             disabled={isStreaming}
