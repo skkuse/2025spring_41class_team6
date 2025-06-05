@@ -56,7 +56,7 @@ class MessageRequest(BaseModel):
     content: str
 
 # 영화 관련 모델
-class Actor(BaseModel):
+class Person(BaseModel):
     id: int
     name: str
     profile_image: str
@@ -64,7 +64,7 @@ class Actor(BaseModel):
 class Character(BaseModel):
     id: int
     name: str
-    actor: Optional[Actor]
+    actor: Optional[Person]
 
 class Movie(BaseModel):
     id: int
@@ -77,10 +77,12 @@ class Movie(BaseModel):
     rating: int = 0
     ordering: int = 0
     genres: List[str] = []
-    chracters: List[Character] = []
+    characters: List[Character] = []
+    directors: List[Person] = []
 
 class MovieIDRequest(BaseModel):
     id: int
 
-class ArchiveRequest(MovieIDRequest):
-    ranking: int
+class ArchiveRequest(BaseModel):
+    movie_id: int
+    rating: int
