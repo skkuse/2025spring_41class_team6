@@ -4,12 +4,7 @@ from enum import Enum
 from urllib.parse import urljoin
 from typing import cast
 
-import sys
-if sys.version_info < (3, 11):
-  from typing_extensions import TypedDict, Required, NotRequired
-else:
-  from typing import TypedDict, Required, NotRequired
-
+from common.tmdb_types import *
 from common.env import ENV_TMDB_API_KEY
 
 tmdb.API_KEY = ENV_TMDB_API_KEY
@@ -30,105 +25,46 @@ def tmdb_get_configuration() -> dict|None:
     _cached_tmbd_configuration = tmdb.Configuration().info()
   return _cached_tmbd_configuration
 
-# see: https://developer.themoviedb.org/reference/search-movie
-TmdbSearchMovieArgs = TypedDict(
-  "TmdbSearchMovieArgs", {
-    "query"                  : str,
-    "include_adult"          : NotRequired[bool],
-    "language"               : NotRequired[str],
-    "primary_release_year"   : NotRequired[str],
-    "page"                   : NotRequired[int],
-    "region"                 : NotRequired[str],
-    "year"                   : NotRequired[str],
-  }
-)
-
-TmdbSearchOpt = TypedDict(
-  "TmdbSearchOpt", {
-    "movie_id" : NotRequired[int],
-    "search"   : NotRequired[TmdbSearchMovieArgs],
-    "lang"     : NotRequired[str],
-  }
-)
-
-ActorInfo = TypedDict(
-  "ActorInfo", {
-    "credit_id": str,
-    "person_id": int,
-    "character": str,
-    "name": str,
-    "original_name": str,
-    "profile_path": str,
-    "order": int,
-  }
-)
-
-DirectorInfo = TypedDict(
-  "DirectorInfo", {
-    "credit_id": str,
-    "person_id": int,
-    "name": str,
-    "original_name": str,
-    "profile_path": str,
-  }
-)
-
-PlatformInfo = TypedDict(
-  "PlatformInfo", {
-    "tmdb_id": int,
-    "name": str,
-    "logo_path": str
-  }
-)
-
-def tmdb_parse_casts(credits: dict) -> list[ActorInfo]:
+# TMDB에서는 주요인물만 가져올 수 있는 방법이 딱히 없기 때문에 order 상위 N명으로 추려냅니다
+def tmdb_parse_casts(credits: dict, max_ordering: int) -> List[ActorInfo]:
   tmp = credits["cast"]
-  return [{
-    "credit_id": i["credit_id"],
-    "person_id": i["id"],
-    "character": i["character"],
-    "name": i["name"],
-    "original_name": i["original_name"],
-    "profile_path": i["profile_path"],
-    "order": i["order"],
-  } for i in tmp]
+  return [ActorInfo(
+    credit_id = i["credit_id"],
+    person_id = i["id"],
+    character = i["character"],
+    name = i["name"],
+    original_name = i["original_name"],
+    profile_path = i["profile_path"],
+    order = i["order"],
+  ) for i in tmp if i["order"] < max_ordering]
 
-def tmdb_parse_directors(credits: dict) -> list[DirectorInfo]:
+def tmdb_parse_directors(credits: dict) -> List[DirectorInfo]:
   tmp = credits["crew"]
-  return [{
-    "credit_id": i["credit_id"],
-    "person_id": i["id"],
-    "name": i["name"],
-    "original_name": i["original_name"],
-    "profile_path": i["profile_path"],
-  } for i in tmp if i["job"] == "Director"]
+  return [DirectorInfo(
+    credit_id = i["credit_id"],
+    person_id = i["id"],
+    name = i["name"],
+    original_name = i["original_name"],
+    profile_path = i["profile_path"],
+  ) for i in tmp if i["job"] == "Director"]
 
-def tmdb_parse_platforms(kr_providers: dict) -> list[PlatformInfo]:
+def tmdb_parse_platforms(kr_providers: dict) -> List[PlatformInfo]:
   if kr_providers is None:
     return []
-  tmp = kr_providers["flatrate"]
-  return [{
-    "tmdb_id": i["provider_id"],
-    "name": i["provider_name"],
-    "logo_path": i["logo_path"],
-  } for i in tmp]
+  print(kr_providers)
+  tmp = kr_providers.get("flatrate")
+  if tmp is None:
+    tmp = kr_providers.get("free") # 여기 실제론 TMDB API 문서와 다르게 반환하는 요소가 있는 것 같음
+  if tmp is None:
+    return []
 
-TmdbRequestResult = TypedDict(
-  'TmdbRequestResult', {
-    "id": int,
-    "title": str,
-    "overview": str,
-    "poster_path": str,
-    "release_date": date,
-    "genres": list[str],
-    "casts": list[ActorInfo],
-    "directors": list[DirectorInfo],
-    "platforms": list[PlatformInfo],
-    "external_ids": dict[str, str]
-  }
-)
+  return [PlatformInfo(
+    tmdb_id = i["provider_id"],
+    name = i["provider_name"],
+    logo_path = i["logo_path"],
+  ) for i in tmp]
 
-def tmdb_request_movie_bulk(identifier: TmdbSearchOpt) -> TmdbRequestResult|None:
+def tmdb_request_movie_bulk(identifier: TmdbSearchOpt, max_casts: int= 15) -> List[TmdbRequestResult]:
   """
   TMDB에서 영화를 찾습니다.  
   Args:
@@ -137,7 +73,7 @@ def tmdb_request_movie_bulk(identifier: TmdbSearchOpt) -> TmdbRequestResult|None
       * query로 찾고 싶다면: `search`에 dictionary 형태로 `query`, `page` 등의 값 세팅  
         참고: https://developer.themoviedb.org/reference/search-movie
   Returns:
-    TMDB에서 찾은 영화 정보 1개를 반환합니다
+    TMDB에서 찾은 영화 정보들을 모두 반환합니다
   """
   id = identifier.get("movie_id")
   search = identifier.get("search")
@@ -146,44 +82,43 @@ def tmdb_request_movie_bulk(identifier: TmdbSearchOpt) -> TmdbRequestResult|None
   if lang is None:
     lang = "ko"
 
-  # ID로 찾을 때
   if id is not None:
-    movie = tmdb.Movies(id)
-
-  # query로 찾을 때
+    ids = [id]
   elif search and search["query"]:
     tmdb.Search().movie()
     movies = tmdb.Search().movie(**search)["results"]
-    if len(movies) == 0:
-      return None
-    
-    # 첫 번째 결과만 일단 가져옴
-    id = movies[0]["id"]
+    ids = [movie["id"] for movie in movies]
+  else:
+    return []
+
+  movie_data: List[TmdbRequestResult] = []
+  for id in ids:
     movie = tmdb.Movies(id)
 
-  else:
-    return None
+    response = movie.info(append_to_response="credits,watch/providers,external_ids", language=lang)
+    credits = response["credits"]
+    kr_providers = response["watch/providers"]["results"].get('KR')
+    externals = response["external_ids"]
 
-  response = movie.info(append_to_response="credits,watch/providers,external_ids", language=lang)
-  credits = response["credits"]
-  kr_providers = response["watch/providers"]["results"].get('KR')
-  externals = response["external_ids"]
+    data = TmdbRequestResult(
+      id = id,
+      title = response["title"],
+      overview = response["overview"],
+      poster_path = response["poster_path"],
+      release_date = tmdb_parse_release_date(response),
+      genres = tmdb_parse_genres(response),
+      casts = tmdb_parse_casts(credits, max_casts),
+      directors = tmdb_parse_directors(credits),
+      platforms = tmdb_parse_platforms(kr_providers),
+      external_ids = ExternalIdInfo(
+        imdb = externals.get("imdb_id"),
+        wikidata = externals.get("wikidata_id")
+      )
+    )
+    movie_data.append(data)
 
-  return {
-    "id": id,
-    "title": response["title"],
-    "overview": response["overview"],
-    "poster_path": response["poster_path"],
-    "release_date": tmdb_parse_release_date(response),
-    "genres": tmdb_parse_genres(response),
-    "casts": tmdb_parse_casts(credits),
-    "directors": tmdb_parse_directors(credits),
-    "platforms": tmdb_parse_platforms(kr_providers),
-    "external_ids": {
-      "imdb": externals["imdb_id"],
-      "wikidata": externals["wikidata_id"]
-    },
-  }
+  return movie_data
+
 
 def tmdb_full_image_path(path: str, type: ImgType, size_max: int|None=None, secure=True):
   """

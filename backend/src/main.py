@@ -1,138 +1,186 @@
-from fastapi import FastAPI, Path, Body, Response, Request, HTTPException, status, Depends
+import asyncio
+from fastapi import FastAPI, Path, Body, Query, Response, Request, HTTPException, status, Depends
+from fastapi.responses import StreamingResponse
 from datetime import datetime
 from api_schema import *
+from llm_layer import get_summary_from_qachat, send_message_to_qachat, stream_send_message_to_qachat
 from database.utils import *
 from common.env import *
 import auth
 from typing import cast
+import llm.qachat as qa
 
 app = FastAPI()
 
 app.include_router(auth.router)
 
-
-@app.get("/api/user", response_model=UserInfoResponse)
-async def get_user_information(user_id: int = Depends(auth.get_current_user_id), db: Session = Depends(get_db)):
+# auth.get_current_user_id를 오버라이드해서 login을 skip할 수 있음
+#
+# app.dependency_overrides[auth.get_current_user_id] = lambda req: 1
+# => 항상 ID=1 로 로그인됨
+# 또는 find_user_by_id 자체를 오버라이드해서 원하는 유저로 자동 login할 수 있음
+def find_user_by_id(user_id: int = Depends(auth.get_current_user_id), db: Session = Depends(get_db)):
     user = db_find_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(404, detail="User not found.")
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
+@app.get("/api/user", response_model=UserInfoResponse)
+async def get_user_information(user: UserInfoInternal = Depends(find_user_by_id)):
     return UserInfoResponse(
-        id = user_id,
+        id = user.id,
         email=user.email,
         nickname=user.nickname
     )
 
+@app.get("/api/test")
+async def test():
+    import llm.qachat as qachat
+    print(qachat.session_memories)
+
+
 # ---------------------------
 # /chatrooms
 # ---------------------------
-@app.get("/api/chatrooms")
-async def get_chatrooms():
+@app.get("/api/chatrooms", response_model=ChatRoomList)
+async def get_chatrooms(user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    rooms = db_get_user_chatrooms(db, user.id)
+    
     return {
         "normal": [
-            ChatRoom(id=1234, title="채팅방 이름"),
-            ChatRoom(id=356, title="채팅방 #2")
+            ChatRoom(id=room.id, title=room.title)
+            for room in rooms if room.character_id is None
         ],
         "immersive": [
-            ChatRoom(id=534566000, title="몰입형 대화 #1")
+            ChatRoom(id=room.id, title=room.title)
+            for room in rooms if room.character_id is not None
         ]
     }
 
 
 @app.post("/api/chatrooms", response_model=CreateChatroomResponse)
-async def create_chatroom(payload: CreateChatroomRequest):
+async def create_chatroom(payload: CreateChatroomRequest,
+                          user: UserInfoInternal = Depends(find_user_by_id),
+                          db: Session = Depends(get_db)):
+    room = db_make_new_chatroom(db, user.id)
+    if room is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to create chatroom")
+
     chats = []
-    if payload.initial_message:
-        chats.append(ChatHistory(
-            user_message=payload.initial_message,
-            ai_message="AI 응답 예시",
-            timestamp=datetime.now()
-        ))
+    if not payload.initial_message:
+        return CreateChatroomResponse(
+            id = room.id,
+            title = room.title,
+            chats = chats
+        )
+
+    # 초기 메시지가 있었다면 메시지를 AI에게 보내고 응답을 chats에 append하여 반환
+    response = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
+    result = db_append_chat_message(db, room.id, payload.initial_message, response, get_summary_from_qachat(room.id))
+    if result is None:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
+    
+    chats.append(ChatHistory(
+        user_message=result.user_chat,
+        ai_message=result.ai_chat,
+        timestamp=result.timestamp
+    ))
+    
     return CreateChatroomResponse(
-        id=1234,
-        title="채팅방 이름",
-        chats=chats
+        id = room.id,
+        title = room.title,
+        chats = chats
     )
 
+@app.delete("/api/chatrooms", response_model=DeleteChatroomResponse)
+async def delete_chatroom(payload: ChatroomIDRequest,
+                          user: UserInfoInternal = Depends(find_user_by_id),
+                          db: Session = Depends(get_db)):
+    if db_delete_user_chatroom(db, payload.id, user.id):
+        return DeleteChatroomResponse(id=payload.id)
+    else:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="db removal failed")
 
 # ---------------------------
 # /chatrooms/{room_id}/messages
 # ---------------------------
 @app.get("/api/chatrooms/{room_id}/messages", response_model=List[ChatHistory])
-async def get_messages(room_id: int = Path(...)):
-    return [
-        ChatHistory(user_message="안녕", ai_message="안녕하세요!", timestamp=datetime.now()),
-        ChatHistory(user_message="이 영화 어때?", ai_message="추천할게요!", timestamp=datetime.now())
-    ]
+async def get_messages(room_id: int,
+                       user: UserInfoInternal = Depends(find_user_by_id),
+                       db: Session = Depends(get_db)):
+    chats = db_get_chat_messages(db, user.id, room_id)
+    return [ChatHistory(
+        user_message=chat.user_chat,
+        ai_message=chat.ai_chat,
+        timestamp=chat.timestamp
+    ) for chat in chats]
 
+@app.post("/api/chatrooms/{room_id}/messages", response_model=ChatHistory, response_description="""
+`room_id`의 대화방에 메시지를 보낸 뒤, 그 응답을 ChatHistory의 형태로 불러옵니다.  
+만약 stream=true 라면, text/event-stream 형식으로 스트리밍됩니다. 프론트에서 유의해서 작업해주세요
+""")
+async def post_message(room_id: int,
+                       payload: MessageRequest = Body(...),
+                       stream: bool = Query(False, description="true 시 SSE를 통한 스트리밍 응답"),
+                       user: UserInfoInternal= Depends(find_user_by_id),
+                       db: Session = Depends(get_db)):
+    
+    if not stream:
+        response = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
+        if result is None:
+            raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
 
-@app.post("/api/chatrooms/{room_id}/messages", response_model=ChatHistory)
-async def post_message(room_id: int, payload: MessageRequest):
-    return ChatHistory(
-        user_message=payload.content,
-        ai_message="AI 응답",
-        timestamp=datetime.now()
-    )
+        return ChatHistory(
+            user_message=result.user_chat,
+            ai_message=result.ai_chat,
+            timestamp=result.timestamp
+        )
+    else:
+        async def event_generator():
+            full_answer = ""
+            async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
+                full_answer += chunk
+                yield f"data: {chunk}\n\n"
 
+                # 버퍼링 방지
+                await asyncio.sleep(0)
+            result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
+            if result is None:
+                print("something went wrong...")
+        
+        return StreamingResponse(
+            event_generator(),
+        )
 
-# ---------------------------
-# /movies/{id}
-# ---------------------------
-@app.get("/api/movies/{id}", response_model=Movie)
-async def get_movie(id: int):
-    return Movie(
-        id=id,
-        title="영화 제목(TMDB-ko 기준)",
-        overview="영화 줄거리 요약",
-        wiki_document="wiki 줄거리",
-        release_date="2000-00-00 00:00:00",
-        poster_img_url="https://poster.example.com",
-        trailer_img_url="https://trailer.example.com",
-        rating=0,
-        ordering=0
-    )
 
 
 # ---------------------------
 # /movies/bookmarked
 # ---------------------------
 @app.get("/api/movies/bookmarked", response_model=List[Movie])
-async def get_bookmarked():
-    return [
-        Movie(id=1, title="Bookmark Movie #1", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
-              poster_img_url="https://...", trailer_img_url="https://...", ordering=1),
-        Movie(id=2, title="Bookmark Movie #2", overview="...", wiki_document="...", release_date="2020-01-01 00:00:00",
-              poster_img_url="https://...", trailer_img_url="https://...", ordering=2)
-    ]
-
+async def get_bookmarked(user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    movies = db_get_bookmarked_movies(db, user.id)
+    return [public_movie_info(movie) for movie in movies]
 
 @app.post("/api/movies/bookmarked", response_model=Movie)
-async def post_bookmark(payload: MovieIDRequest):
-    return Movie(
-        id=payload.id,
-        title="Bookmarked!",
-        overview="...",
-        wiki_document="...",
-        release_date="2000-00-00 00:00:00",
-        poster_img_url="https://poster.example.com",
-        trailer_img_url="https://trailer.example.com",
-        ordering=1
-    )
+async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    if db_add_bookmark(db, user.id, payload.id):
+        return public_movie_info(
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, False) )
+        )
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
 
 
 @app.delete("/api/movies/bookmarked", response_model=Movie)
-async def delete_bookmark(payload: MovieIDRequest):
-    return Movie(
-        id=payload.id,
-        title="Bookmark Removed",
-        overview="...",
-        wiki_document="...",
-        release_date="2000-00-00 00:00:00",
-        poster_img_url="https://poster.example.com",
-        trailer_img_url="https://trailer.example.com",
-        ordering=1
-    )
+async def delete_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    movie = db_find_movie_by_id(db, payload.id, False)
 
+    if movie and db_rm_bookmark(db, user.id, payload.id):
+        return public_movie_info(movie)
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
 
 # ---------------------------
 # /movies/archive
@@ -174,4 +222,49 @@ async def delete_archive(payload: MovieIDRequest):
         trailer_img_url="https://trailer.example.com",
         ordering=1,
         ranking=3
+    )
+
+# ---------------------------
+# /movies/{id}
+# ---------------------------
+@app.get("/api/movies/{id}", response_model=Movie)
+async def get_movie(id: int = Path(...), verbose: bool = Query(True), db: Session = Depends(get_db)):
+    movie = db_find_movie_by_id(db, id, verbose)
+    if movie is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="영화가 없습니다.")
+
+    return public_movie_info(movie)
+
+
+def public_movie_info(internal: MovieInfoInternal) -> Movie:
+    movie = internal
+
+    return Movie(
+        id=movie.id,
+        title=movie.title,
+        overview=movie.tmdb_overview                             if movie.tmdb_overview else "[TMDB 줄거리 없음]",
+        wiki_document=movie.wiki_document                        if movie.wiki_document else "[WIKIPEDIA 정보 없음]",
+        release_date=str(movie.release_date)                     if movie.release_date else "[방영일 정보 없음]",
+        poster_img_url=tmdb_full_image_path(movie.poster_img_url, ImgType.POSTER, None)  if movie.poster_img_url  else "",
+        trailer_img_url=tmdb_full_image_path(movie.trailer_img_url, ImgType.STILL, None) if movie.trailer_img_url else "",
+        rating = 0,
+        ordering = 0,
+        genres = movie.genres,
+        chracters = [public_character_info(chara) for chara in movie.characters]
+    )
+
+def public_character_info(internal: CharacterInfoInternal) -> Character:
+    return Character(
+        id = internal.id,
+        name = internal.name,
+        actor = (
+            Actor(
+                id = internal.actor.id,
+                name = internal.actor.name,
+                profile_image = tmdb_full_image_path(
+                    internal.actor.profile_image_path,
+                    ImgType.PROFILE,
+                    None) if internal.actor.profile_image_path else ""
+            ) if internal.actor else None
+        )
     )
