@@ -191,7 +191,7 @@ async def get_bookmarked(user: UserInfoInternal = Depends(find_user_by_id), db: 
 async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_add_bookmark(db, user.id, payload.id):
         return public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, True) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, True, user.id) )
         )
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
@@ -199,7 +199,7 @@ async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depend
 
 @app.delete("/api/movies/bookmarked", response_model=Movie)
 async def delete_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, payload.id, True)
+    movie = db_find_movie_by_id(db, payload.id, True, user.id)
 
     if movie and db_rm_bookmark(db, user.id, payload.id):
         return public_movie_info(movie)
@@ -219,7 +219,7 @@ async def get_archive(user: UserInfoInternal = Depends(find_user_by_id), db: Ses
 async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_add_archived(db, user.id, payload.movie_id, payload.rating):
         ret = public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True, user.id) )
         )
         ret.rating = min(5, max(0, payload.rating))
         return ret
@@ -231,7 +231,7 @@ async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends
 async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_update_archived(db, user.id, payload.movie_id, payload.rating):
         ret = public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True, user.id) )
         )
         ret.rating = min(5, max(0, payload.rating))
         return ret
@@ -241,7 +241,7 @@ async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depen
 
 @app.delete("/api/movies/archive", response_model=Movie)
 async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, payload.id, True)
+    movie = db_find_movie_by_id(db, payload.id, True, user.id)
     if movie and db_rm_archived(db, user.id, payload.id):
         return public_movie_info(movie)
     else:
@@ -252,8 +252,9 @@ async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depen
 # /movies/{id}
 # ---------------------------
 @app.get("/api/movies/{id}", response_model=Movie)
-async def get_movie(id: int = Path(...), verbose: bool = Query(True), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, id, verbose)
+async def get_movie(request: Request, id: int = Path(...), verbose: bool = Query(True), db: Session = Depends(get_db)):
+    user_id = auth.check_user_id(request)
+    movie = db_find_movie_by_id(db, id, verbose, user_id)
     if movie is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="영화가 없습니다.")
 
@@ -271,6 +272,7 @@ def public_movie_info(internal: MovieInfoInternal) -> Movie:
         release_date=str(movie.release_date)                     if movie.release_date else "[방영일 정보 없음]",
         poster_img_url=tmdb_full_image_path(movie.poster_img_url, ImgType.POSTER, None)  if movie.poster_img_url  else "",
         trailer_img_url=tmdb_full_image_path(movie.trailer_img_url, ImgType.STILL, None) if movie.trailer_img_url else "",
+        bookmarked=movie.bookmarked                                                      if movie.bookmarked is not None else False,
         rating = movie.rating                                                            if movie.rating else 0,
         ordering = 0,
         genres = movie.genres,

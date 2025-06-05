@@ -5,6 +5,13 @@ from common.env import ENV_API_SKIP_AUTH
 
 USER_ID_COOKIE_KEY = "user_id"
 
+def check_user_id(request: Request):
+    user_id = request.cookies.get(USER_ID_COOKIE_KEY)
+    if not user_id:
+      return None
+
+    return int(user_id)
+
 def get_current_user_id(request: Request):
     user_id = request.cookies.get(USER_ID_COOKIE_KEY)
     if not user_id:
