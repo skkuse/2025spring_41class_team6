@@ -18,7 +18,7 @@ const MovieDetail = ({ open, onClose, id }) => {
   if (!open) return null;
 
   const data = getMovie(id);
-  const tabLabels = ["개요", "출연진", "나의 리뷰"];
+  const tabLabels = ["개요", "출연진"];
 
   return (
     <Modal
@@ -160,14 +160,6 @@ const MovieDetail = ({ open, onClose, id }) => {
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-          {tabIndex === 2 && (
-            <div>
-              <h4 className="font-semibold mb-1">나의 리뷰</h4>
-              <p className="text-gray-700 text-base leading-relaxed">
-                {data.myReview || "아직 리뷰가 없습니다."}
-              </p>
             </div>
           )}
         </Box>

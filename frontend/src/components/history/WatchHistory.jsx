@@ -21,7 +21,7 @@ const WatchHistory = () => {
         <div className="flex gap-4 overflow-x-auto w-full pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           {likedMovies.map((movie) => (
             <div className="flex-shrink-0" key={movie.id}>
-              <MovieCard {...movie} />
+              <MovieCard {...movie} viewMode={1} />
             </div>
           ))}
         </div>
@@ -35,7 +35,7 @@ const WatchHistory = () => {
         <div className="flex gap-4 overflow-x-auto w-full pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           {dislikedMovies.map((movie) => (
             <div className="flex-shrink-0" key={movie.id}>
-              <MovieCard {...movie} />
+              <MovieCard {...movie} viewMode={1} />
             </div>
           ))}
         </div>

@@ -1,4 +1,8 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import ThumbDownAltOutlinedIcon from "@mui/icons-material/ThumbDownAltOutlined";
+import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
+import BookmarkBorderOutlinedIcon from "@mui/icons-material/BookmarkBorderOutlined";
 
 export default function MovieCard({
   id,
@@ -7,11 +11,32 @@ export default function MovieCard({
   director,
   description,
   imageUrl,
+  viewMode,
 }) {
   const navigate = useNavigate();
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isDisliked, setIsDisliked] = useState(false);
 
   const handleClick = () => {
     navigate(`/history/${id}`);
+  };
+
+  const handleBookmark = (e) => {
+    e.stopPropagation();
+    setIsBookmarked(!isBookmarked);
+  };
+
+  const handleLike = (e) => {
+    e.stopPropagation();
+    setIsLiked(!isLiked);
+    if (isDisliked) setIsDisliked(false);
+  };
+
+  const handleDislike = (e) => {
+    e.stopPropagation();
+    setIsDisliked(!isDisliked);
+    if (isLiked) setIsLiked(false);
   };
 
   return (
@@ -36,6 +61,66 @@ export default function MovieCard({
       <div className="p-4 flex flex-col gap-1 relative">
         <div className="flex justify-between items-center">
           <h3 className="text-sm font-semibold truncate">{title}</h3>
+          <div className="flex gap-2">
+            {viewMode === 0 && (
+              <button
+                onClick={handleBookmark}
+                className={`p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                  isBookmarked ? "text-blue-500" : "text-gray-400"
+                }`}
+              >
+                <BookmarkBorderOutlinedIcon size={16} />
+              </button>
+            )}
+            {viewMode === 1 && (
+              <>
+                <button
+                  onClick={handleLike}
+                  className={`p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                    isLiked ? "text-red-500" : "text-gray-400"
+                  }`}
+                >
+                  <ThumbUpAltOutlinedIcon size={16} />
+                </button>
+                <button
+                  onClick={handleDislike}
+                  className={`p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                    isDisliked ? "text-gray-700" : "text-gray-400"
+                  }`}
+                >
+                  <ThumbDownAltOutlinedIcon size={16} />
+                </button>
+              </>
+            )}
+            {viewMode === 2 && (
+              <>
+                <button
+                  onClick={handleBookmark}
+                  className={`p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                    isBookmarked ? "text-blue-500" : "text-gray-400"
+                  }`}
+                >
+                  <BookmarkBorderOutlinedIcon size={16} />
+                </button>
+                <button
+                  onClick={handleLike}
+                  className={`p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                    isLiked ? "text-red-500" : "text-gray-400"
+                  }`}
+                >
+                  <ThumbUpAltOutlinedIcon size={16} />
+                </button>
+                <button
+                  onClick={handleDislike}
+                  className={`p-1 rounded-full hover:bg-gray-100 transition-colors ${
+                    isDisliked ? "text-blue-500" : "text-gray-400"
+                  }`}
+                >
+                  <ThumbDownAltOutlinedIcon size={16} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <p className="text-xs text-gray-500">
           {year} · {director}
