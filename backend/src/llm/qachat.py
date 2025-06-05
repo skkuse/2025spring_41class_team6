@@ -7,37 +7,33 @@ from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.chains import RetrievalQA
 from langchain.memory import ConversationSummaryBufferMemory
-
 
 from crawler import get_tmdb_overview, get_wikipedia_content, get_watcha_reviews
 
-
 # --------------------- [1] 초기 설정 ---------------------
 load_dotenv()
-tmdb.API_KEY = os.getenv("TMDB_API_KEY")
-openai_key = os.getenv("OPENAI_API_KEY")
+tmdb.API_KEY = os.environ.get("TMDB_API_KEY")
+openai_key = os.environ.get("OPENAI_API_KEY")
 if not tmdb.API_KEY or not openai_key:
     raise ValueError("API 키가 없습니다.")
 
 llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
 embedding = OpenAIEmbeddings()
 
-
 # --------------------- [2] 프롬프트 ---------------------
 
 title_extract_prompt = PromptTemplate.from_template("""
-다음 문장에서 언급된 영화 제목을 출력하세요. 
-특히 시리즈물이라면 몇 번 시리즈인지 숫자를 기반으로 명확히 구분해주세요.
-만일 영화 관련 내용이 아니라면 '없음'이라고 답변하세요.
-각 영화 제목은 , 로 구분하세요.
-각 영화에 대해 다음 정보를 포함하세요:
+다음 문장에서 언급된 영화 제목을 추출하세요.
 
-- 영화 제목
-- 구분 가능한 키워드 또는 정보 (출시년도, 시리즈 번호, 넷플릭스/디즈니 등 플랫폼)
+- 시리즈 영화는 반드시 '아이언맨 1', '아이언맨 2'처럼 숫자 시리즈를 명확히 구분해주세요.
+- 개별 영화만 추출하며, 관련 콘텐츠(애니메이션, 단편 등)는 제외합니다.
+- 플랫폼 정보(예: 넷플릭스, 디즈니 등)는 등장 시에만 명시하고, 없으면 생략합니다.
+- '아이언맨'처럼 단일 제목만 있는 경우, '아이언맨 1'로 간주합니다.
+- 영화 관련 내용이 전혀 없다면 '없음'이라고 출력하세요.
 
-출력 형식: 영화제목1 (키워드1), 영화제목2 (키워드2) ...
+출력 형식:
+영화제목1 (시리즈 번호 또는 키워드), 영화제목2 (키워드) ...
 
 예시:
 듄 (2021), 듄 2 (2024), 바비 (마고 로비 주연)
@@ -49,6 +45,9 @@ title_extract_prompt = PromptTemplate.from_template("""
 title_chain = title_extract_prompt | llm
 
 response_prompt = PromptTemplate.from_template("""
+이전 대화 요약:
+{history}
+
 아래의 영화 정보와 리뷰들을 참고해 사용자 질문에 답하세요.
 리뷰에 포함된 다양한 관점을 반영해 **토론하듯 풍부하게 설명**하세요.
 리뷰의 내용을 가져올 때는 왓챠피디아에서 가져온 내용이라는 것을 명시해주세요.
@@ -165,26 +164,17 @@ def get_memory(session_id):
         )
     return session_memories[session_id]
 
-def get_qa_chain(session_id: str, target_titles: list[str] = None):
-    db = get_chroma_shared()
-    memory = get_memory(session_id)
+# --------------------- [6] 스트리밍 응답 처리 함수 ---------------------
+# 기존 RetrievalQA 체인을 사용하지 않고, context를 직접 구성한 뒤 ChatOpenAI(stream=True)로 토큰 단위 출력
+from typing import Iterator
 
-    search_kwargs = {"k": 10}
-    if target_titles:
-        search_kwargs["filter"] = {"title": {"$in": target_titles}}
+def stream_chat_response(prompt_text: str) -> Iterator[str]:
+    streaming_llm = ChatOpenAI(model="gpt-4o", temperature=0.7, streaming=True)
+    for chunk in streaming_llm.stream(prompt_text):
+        if hasattr(chunk, "content") and chunk.content:
+            yield chunk.content
 
-    retriever = db.as_retriever(search_kwargs=search_kwargs)
-
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        chain_type="stuff",
-        chain_type_kwargs={"prompt": response_prompt},
-        memory=memory,
-        return_source_documents=False
-    )
-
-# --------------------- [6] 메인 루프 ---------------------
+# --------------------- [7] 메인 루프 ---------------------
 def run_qa_mode():
     session_id = "session456"
     while True:
@@ -197,21 +187,37 @@ def run_qa_mode():
 
         for m in validated_movies:
             print(f"✔ {m['title']} ({m['release_date']}) → TMDB ID: {m['tmdb_id']}")
-            
+
         if movie_titles:
             chroma = get_chroma_shared()
             load_data(movie_titles, chroma)
         else:
             print("[안내] 영화 data loading 생략.")
 
-        qa_chain = get_qa_chain(session_id, target_titles=movie_titles)
-        result = qa_chain.invoke({"query": user_input})
-
-        print("\n[답변]", result["result"])
-
-        '''
+        # 충돌 해결: 스트리밍 구조 기준으로 db/memory 가져오고 retriever 구성
+        db = get_chroma_shared()
         memory = get_memory(session_id)
+
+        search_kwargs = {"k": 10}
+        if movie_titles:
+            search_kwargs["filter"] = {"title": {"$in": movie_titles}}
+        retriever = db.as_retriever(search_kwargs=search_kwargs)
+
+        docs = retriever.get_relevant_documents(user_input)
+        context = "\n\n".join([doc.page_content for doc in docs])
+
+        summary = memory.buffer or "(요약 없음)"
+        full_prompt = response_prompt.format(history=summary, context=context, question=user_input)
+        
+        print("\n[답변] ", end="", flush=True)
+        full_answer = ""
+        for token in stream_chat_response(full_prompt):
+            print(token, end="", flush=True)
+            full_answer += token
+        print()
+
+        # 요약 memory 업데이트
+        memory.save_context({"input": user_input}, {"output": full_answer})
         summary = memory.buffer
-        if summary:
-            print("\n[요약] 지금까지의 대화 요약:\n", summary)
-        '''
+        #if summary:
+        #    print("\n[요약] 지금까지의 대화 요약:\n", summary)
