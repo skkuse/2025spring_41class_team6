@@ -10,17 +10,59 @@ import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
 import ThumbDownAltOutlinedIcon from "@mui/icons-material/ThumbDownAltOutlined";
 import useMovie from "@/hooks/movie/useMovie";
 import ActorCard from "@/components/movie/ActorCard";
+import { usePostBookmark, useDeleteBookmark } from "@/hooks/movie/useBookmark";
+import {
+  usePostArchive,
+  useDeleteArchive,
+  usePutArchive,
+} from "@/hooks/movie/useArchive";
+
 const MovieDetail = ({ open, onClose, id }) => {
   const [tabIndex, setTabIndex] = useState(0);
-  const [isBookmarked, setIsBookmarked] = useState(false);
+  // const [isBookmarked, setIsBookmarked] = useState(false);
 
   const { data: movie, isLoading } = useMovie(id);
+  console.log(movie);
   if (!open) return null;
   if (isLoading) return <div>Loading...</div>;
 
-  const isLiked = movie.rating > 3;
-
   const tabLabels = ["개요", "출연진"];
+
+  const { mutate: postBookmark } = usePostBookmark();
+  const { mutate: deleteBookmark } = useDeleteBookmark();
+  const { mutate: postArchive } = usePostArchive();
+  const { mutate: putArchive } = usePutArchive();
+  const { mutate: deleteArchive } = useDeleteArchive();
+
+  const handleBookmark = () => {
+    if (movie.bookmarked) {
+      deleteBookmark(id);
+      onClose();
+    } else {
+      postBookmark(id);
+      onClose();
+    }
+  };
+
+  const handleLike = () => {
+    if (movie.rating === 0) {
+      postArchive(id, 5);
+    } else if (movie.rating === 1) {
+      putArchive(id, 5);
+    } else if (movie.rating === 5) {
+      deleteArchive(id);
+    }
+  };
+
+  const handleDislike = () => {
+    if (movie.rating === 0) {
+      postArchive(id, 1);
+    } else if (movie.rating === 5) {
+      putArchive(id, 1);
+    } else if (movie.rating === 1) {
+      deleteArchive(id);
+    }
+  };
 
   return (
     <Modal
@@ -82,10 +124,11 @@ const MovieDetail = ({ open, onClose, id }) => {
 
             {/* 상호작용 버튼 */}
             <div className="flex gap-4 mt-auto pt-6">
+              {/* 북마크 */}
               <button
-                onClick={() => setIsBookmarked(!isBookmarked)}
+                onClick={handleBookmark}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  isBookmarked
+                  movie.bookmarked
                     ? "bg-blue-50 border-blue-200 text-blue-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}
@@ -93,10 +136,11 @@ const MovieDetail = ({ open, onClose, id }) => {
                 <BookmarkBorderIcon className="w-5 h-5" />
                 <span className="text-sm font-medium">북마크</span>
               </button>
+              {/* 좋아요 */}
               <button
-                onClick={() => {}}
+                onClick={handleLike}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  isLiked
+                  movie.rating === 5
                     ? "bg-green-50 border-green-200 text-green-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}
@@ -104,10 +148,11 @@ const MovieDetail = ({ open, onClose, id }) => {
                 <ThumbUpAltOutlinedIcon className="w-5 h-5" />
                 <span className="text-sm font-medium">좋아요</span>
               </button>
+              {/* 싫어요 */}
               <button
-                onClick={() => {}}
+                onClick={handleDislike}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  !isLiked
+                  movie.rating === 1
                     ? "bg-red-50 border-red-200 text-red-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}

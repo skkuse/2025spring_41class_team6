@@ -1,7 +1,6 @@
 import CloseTwoToneIcon from "@mui/icons-material/CloseTwoTone";
-import { getMovies } from "@/apis/testApi";
 import MovieCard from "@/components/movie/MovieCard";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useRecommend from "@/hooks/chat/useRecommend";
 
 const MovieRecommend = ({ onClose, chatroomId }) => {
@@ -10,12 +9,18 @@ const MovieRecommend = ({ onClose, chatroomId }) => {
 
   console.log(recommendation);
 
+  // useEffect를 사용해서 데이터가 로드되면 currentPage를 설정
+  useEffect(() => {
+    if (recommendation?.length) {
+      setCurrentPage(recommendation.length);
+    }
+  }, [recommendation]);
+
   if (isLoading) {
     return <div>Loading...</div>;
   }
 
   const totalPages = recommendation?.length ? recommendation.length : 0;
-  setCurrentPage(totalPages);
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
@@ -73,7 +78,7 @@ const MovieRecommend = ({ onClose, chatroomId }) => {
                   id={movie.id}
                   title={movie.title}
                   year={movie.release_date}
-                  director={movie.directors[0].name}
+                  director={movie.directors?.[0]?.name || ""}
                   description={movie.overview}
                   imageUrl={movie.poster_img_url}
                 />
