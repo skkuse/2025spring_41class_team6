@@ -140,7 +140,7 @@ async def post_message(room_id: int,
     
     if not stream:
         result = await send_message_to_qachat(db, user.id, room_id, payload.content)
-        response = result["messages"]
+        response = result["message"]
         result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
         if result is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")

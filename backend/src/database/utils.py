@@ -224,6 +224,7 @@ def db_append_chat_message(db: Session, room_id: int, usr_msg: str, ai_msg: str,
   try:
     stmt = sql.update(m.ChatRoom).where(m.ChatRoom.id == room_id).values(summary=json.dumps(summary))
     db.execute(stmt)
+    db.flush()
     db.commit()
     return ChatHistoryInternal(
       id=doc.id,
@@ -598,7 +599,9 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
 
   try:
     db.commit()
-    return MovieInfoInternal.model_validate(doc)
+    res = MovieInfoInternal.model_validate(doc)
+    res.genres = [g.name for g in pending_genres]
+    return res
   except IntegrityError as e:
     db.rollback()
     print(e)
@@ -607,7 +610,7 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
 def update_movie_by_tmdb_id(db: Session, tmdb_id: int, lang: str = "ko"):
   """
   TMDB의 영화 정보를 MovieChat DB에 반영합니다.  
-  성공 시 해당 id를 반환합니다.  
+  성공 시 해당 영화 정보를 반환합니다.  
   존재하지 않거나, 실패 시 `None`을 반환합니다
   """
   res = tmdb_request_movie_bulk(identifier={"movie_id": tmdb_id, "lang": lang})
@@ -704,8 +707,8 @@ def db_add_recommended_movies(db: Session, chat_id: int, movie_ids: list[int]):
   stmt = sql.insert(m.RecommendedMovie)
   values = [{"chat_id": chat_id, "movie_id": i} for i in movie_ids]
 
-  db.execute(stmt, values)
   try:
+    db.execute(stmt, values)
     db.commit()
     return True
   except:
