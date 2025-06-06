@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import wikipedia
 import sqlalchemy.dialects.sqlite as sqlite
-from typing import List, Optional, cast
+from typing import List, Optional
 from datetime import date, datetime
 from sqlalchemy.inspection import inspect
 from pydantic import BaseModel, ConfigDict
@@ -85,13 +85,13 @@ def db_create_new_user(db: Session, email: str, password: str, nickname: str):
   stmt = sql.select(m.User).where(m.User.email == email)
   res = db.execute(stmt).scalar_one_or_none()
   if res:
-    return cast(int, res.id)
+    return res.id
 
   doc = m.User(email=email, password=password, nickname=nickname)
   db.add(doc)
   try:
     db.commit()
-    return cast(int, doc.id)
+    return doc.id
   except:
     db.rollback()
     return None
@@ -305,7 +305,7 @@ def db_get_genres_of_movie(db: Session, movie_id: int):
     sql.select(m.Genre.name).join(m.MovieGenre, m.Genre.id == m.MovieGenre.genre_id)
     .where(m.MovieGenre.movie_id == movie_id)
   )
-  return [cast(str, i) for i in db.execute(stmt).scalars().all()]
+  return [i for i in db.execute(stmt).scalars().all()]
 
 def db_get_directors_of_movie(db: Session, movie_id: int):
   stmt = (
@@ -433,7 +433,7 @@ def db_find_movie_by_id(db: Session, id: int, verbose: bool = True, user_id: int
 
   return MovieInfoInternal(
     id=movie.id,
-    tmdb_id=cast(int, movie.tmdb_id),
+    tmdb_id=cast(int, movie.tmdb_id), # 만약 TMDB ID가 없다면 그냥 에러가 나는 게 맞는 것 같다.
     title=movie.title,
     tmdb_overview=movie.tmdb_overview,
     wiki_document=movie.wiki_document,
