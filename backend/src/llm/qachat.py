@@ -25,16 +25,17 @@ embedding = OpenAIEmbeddings()
 # --------------------- [2] 프롬프트 ---------------------
 
 title_extract_prompt = PromptTemplate.from_template("""
-다음 문장에서 언급된 영화 제목을 출력하세요. 
-특히 시리즈물이라면 몇 번 시리즈인지 숫자를 기반으로 명확히 구분해주세요.
-만일 영화 관련 내용이 아니라면 '없음'이라고 답변하세요.
-각 영화 제목은 , 로 구분하세요.
-각 영화에 대해 다음 정보를 포함하세요:
+다음 문장에서 언급된 영화 제목을 추출하세요.
+영화 제목이 명시되지 않았다면 '없음'이라고 출력하세요.
 
-- 영화 제목
-- 구분 가능한 키워드 또는 정보 (출시년도, 시리즈 번호, 넷플릭스/디즈니 등 플랫폼)
+- 특히 시리즈물이라면 몇 번 시리즈인지 숫자를 기반으로 명확히 구분해주세요.
+- 개별 영화만 추출하며, 관련 콘텐츠(애니메이션, 단편 등)는 제외합니다.
+- 플랫폼 정보(예: 넷플릭스, 디즈니 등)는 등장 시에만 명시하고, 없으면 생략합니다.
+- 시리즈물이지만 번호나 부제 없이 단일 제목만 있는 경우 시리즈에 대한 질문이라고 가정하고, 시리즈의 대표적인 영화 제목을 최대 3개 추출합니다.
+- '닥터스트레인지 15'와 같이 존재하지 않는 영화라면 '명확한 재입력 요청'이라고 출력하세요.
 
-출력 형식: 영화제목1 (키워드1), 영화제목2 (키워드2) ...
+출력 형식:
+영화제목1 (키워드), 영화제목2 (키워드) ...
 
 예시:
 듄 (2021), 듄 2 (2024), 바비 (마고 로비 주연)
@@ -43,19 +44,29 @@ title_extract_prompt = PromptTemplate.from_template("""
 영화 목록:
 """)
 
+
 title_chain = title_extract_prompt | llm
 
 response_prompt = PromptTemplate.from_template("""
 이전 대화 요약:
 {history}
+
+당신은 영화 전문가 AI입니다.
 아래의 영화 정보와 리뷰들을 참고해 사용자 질문에 답하세요.
 리뷰에 포함된 다양한 관점을 반영해 **토론하듯 풍부하게 설명**하세요.
-리뷰의 내용을 가져올 때는 왓챠피디아에서 가져온 내용이라는 것을 명시해주세요.
+리뷰의 내용을 가져올 때만 왓챠피디아에서 가져온 내용이라는 것을 명시해주세요.
 질문이 아니면 자연스럽게 대화를 이어가세요.
 사용자가 영화를 추천해달라고 요청하면 이전 대화기록과 리뷰를 바탕으로 사용자가 본 적이 없는 비슷한 영화들을 추천해주세요.
 추천할 영화 리스트는 "[영화 추천 리스트] 영화제목1, 영화제목2, 영화제목3 ..."의 형식으로 대화의 맨 앞에 표시한 후 대화를 이어가 주세요. 
 
-당신은 영화 전문가 AI입니다. 사용자의 모든 질문에 마크다운 형식으로 답변해주세요.
+영화 추천 시 아래 기준과 정보를 참고하세요:
+> - 사용자가 사용자가 관심은 있지만 아직 보지 않은 영화들인 `{bookmark}`에 있는 영화는 추천에서 제외하세요.
+> - 사용자가 보고 좋았던 영화들인 `{archive_prefer}`와 유사한 분위기/장르/감성의 영화를 우선적으로 추천하세요.
+> - 사용자가 보고 별로였던 영화들인 `{archive_dislike}`와 **유사한 성향의 영화는 피하세요**
+> - 리뷰와 맥락을 종합해 사용자가 **선호할 가능성이 높은 영화 3편**만 선정하세요
+> - 이전 대화, 관심 장르, 감정 표현 등도 고려하세요
+
+사용자의 모든 질문에 마크다운 형식으로 답변해주세요.
 **답변 구조:**
 - 제목으로 섹션 구분
 - 제목은 마크다운 제목 형식으로 작성
@@ -82,6 +93,8 @@ def extract_titles_and_metadata_with_llm(user_input: str) -> list[dict]:
 
     if not raw_result or raw_result.lower() in {"없음", "해당 없음", "모름", "영화 아님"}:
         return []
+    elif not raw_result or raw_result.lower() in {"명확한 재입력 요청"}:
+        return ['제목이 명확하지 않음 사용자에게 재입력 요청']
 
     # 결과 파싱: "듄 (2021), 바비 (마고 로비 주연)" 등에서 → [{title: "듄", keyword: "2021"}, ...]
     entries = [e.strip() for e in raw_result.split(",") if e.strip()]
@@ -136,8 +149,8 @@ def _is_cached_on_chroma(title: str, db):
         existing_titles = set()
     return title in existing_titles
 
-def is_cached_on_chroma(title: str):
-    return _is_cached_on_chroma(title, get_chroma_shared())
+def is_cached_on_chroma(title: str, session_id):
+    return _is_cached_on_chroma(title, get_chroma_for_session(session_id))
 
 def _add_to_chroma(movie_name: str, overview: str, wiki: str, reviews: list[str], db):
     joined_reviews = "\n\n".join(f"- {r}" for r in reviews)
@@ -149,12 +162,12 @@ def _add_to_chroma(movie_name: str, overview: str, wiki: str, reviews: list[str]
     split_docs = splitter.split_documents([doc])
     db.add_documents(split_docs)
 
-def add_to_chroma(title: str, tmdb_overview: str|None, wikipedia_content: str|None, watcha_reviews: list[str]):
+def add_to_chroma(title: str, tmdb_overview: str|None, wikipedia_content: str|None, watcha_reviews: list[str], session_id):
     if not tmdb_overview:
         tmdb_overview = ""
     if not wikipedia_content:
         wikipedia_content = ""
-    _add_to_chroma(title, tmdb_overview, wikipedia_content, watcha_reviews, get_chroma_shared())
+    _add_to_chroma(title, tmdb_overview, wikipedia_content, watcha_reviews, get_chroma_for_session(session_id))
      
 def load_data(titles, db):
     for movie_name in titles:
@@ -170,18 +183,19 @@ def load_data(titles, db):
         _add_to_chroma(movie_name, overview, wiki, reviews, db)
 
 # --------------------- [5] Chroma & Memory 설정 ---------------------
-_cached_chroma = None
-session_memories = {}
 
-def get_chroma_shared():
-    global _cached_chroma
-    if _cached_chroma is None:
-        os.makedirs("./chroma_data/movie", exist_ok=True)
-        _cached_chroma = Chroma(
-            persist_directory="./chroma_data/movie",
+session_memories = {}
+_cached_chroma_dict = {}
+
+def get_chroma_for_session(session_id: str):
+    if session_id not in _cached_chroma_dict:
+        dir_path = f"./chroma_data/movie/{session_id}"
+        os.makedirs(dir_path, exist_ok=True)
+        _cached_chroma_dict[session_id] = Chroma(
+            persist_directory=dir_path,
             embedding_function=embedding
         )
-    return _cached_chroma
+    return _cached_chroma_dict[session_id]
 
 def is_memory_on_cache(session_id):
     return session_id in session_memories
@@ -230,13 +244,13 @@ def run_qa_mode():
             print(f"✔ {m['title']} ({m['release_date']}) → TMDB ID: {m['tmdb_id']}")
 
         if movie_titles:
-            chroma = get_chroma_shared()
+            chroma = get_chroma_for_session(session_id)
             load_data(movie_titles, chroma)
         else:
             print("[안내] 영화 data loading 생략.")
 
         # 충돌 해결: 스트리밍 구조 기준으로 db/memory 가져오고 retriever 구성
-        db = get_chroma_shared()
+        db = get_chroma_for_session(session_id)
         memory = get_memory(session_id)
 
         search_kwargs = {"k": 10}
@@ -308,7 +322,7 @@ def get_streamed_messages(
     # _stream_response_generator의 return 타입이 변경되면 안 됩니다.
     #
 
-    db = get_chroma_shared()
+    db = get_chroma_for_session(session_id)
     memory = get_memory(session_id)
 
     search_kwargs = {"k": 10}
@@ -320,7 +334,15 @@ def get_streamed_messages(
     context = "\n\n".join([doc.page_content for doc in docs]) or "관련된 문서를 찾을 수 없습니다."
 
     summary = memory.buffer or "(요약 없음)"
-    full_prompt = response_prompt.format(history=summary, context=context, question=user_input)
+    
+    bookmark_titles = [movie.title for movie in bookmark]
+    #print('북마크한 영화: ', bookmark_titles)
+    archive_prefer = [movie.title for movie in archive if movie.rating==5]
+    #print('좋아요한 영화: ', archive_prefer)
+    archive_dislike = [movie.title for movie in archive if movie.rating==0]
+    #print('싫어요한 영화: ', archive_dislike)
+    
+    full_prompt = response_prompt.format(history=summary, context=context, question=user_input, bookmark=bookmark_titles, archive_prefer=archive_prefer, archive_dislike=archive_dislike)
     
     return _stream_response_generator(user_input, full_prompt, memory)
 
