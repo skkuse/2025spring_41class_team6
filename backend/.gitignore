@@ -3,5 +3,7 @@ venv/
 .vscode
 .env
 **/*.db
+**/chroma/
+**/*.sqlite
 **/chroma_temp/
 **/chroma_data/
