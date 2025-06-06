@@ -13,9 +13,12 @@ const useGetArchiveList = () => {
 const usePostArchive = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (movieId, rating) => postArchive(movieId, rating),
-    onSuccess: () => {
+    mutationFn: ({ movieId, rating }) => postArchive(movieId, rating),
+    onSuccess: (data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["archiveList"] });
+      queryClient.invalidateQueries({ queryKey: ["movie", payload.movie_id] });
+      console.log("Test");
+      console.log(data, payload);
     },
   });
 };
@@ -23,9 +26,12 @@ const usePostArchive = () => {
 const usePutArchive = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (movieId, rating) => putArchive(movieId, rating),
-    onSuccess: () => {
+    mutationFn: ({ movieId, rating }) => putArchive(movieId, rating),
+    onSuccess: (data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["archiveList"] });
+      queryClient.invalidateQueries({ queryKey: ["movie", payload] });
+      console.log("Test");
+      console.log(data, payload);
     },
   });
 };
@@ -33,9 +39,12 @@ const usePutArchive = () => {
 const useDeleteArchive = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (movieId) => deleteArchive(movieId),
-    onSuccess: () => {
+    mutationFn: ({ movieId }) => deleteArchive(movieId),
+    onSuccess: (data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["archiveList"] });
+      queryClient.invalidateQueries({ queryKey: ["movie", payload] });
+      console.log("Test");
+      console.log(data, payload);
     },
   });
 };

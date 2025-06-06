@@ -1,13 +1,26 @@
 import CloseTwoToneIcon from "@mui/icons-material/CloseTwoTone";
-import { getMovies } from "@/apis/testApi";
 import MovieCard from "@/components/movie/MovieCard";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import useRecommend from "@/hooks/chat/useRecommend";
 
-const MovieRecommend = ({ onClose }) => {
-  const movieList = getMovies();
+const MovieRecommend = ({ onClose, chatroomId }) => {
   const [currentPage, setCurrentPage] = useState(1);
-  const moviesPerPage = 5;
-  const totalPages = Math.ceil(movieList.length / moviesPerPage);
+  const { data: recommendation, isLoading } = useRecommend(chatroomId);
+
+  console.log(recommendation);
+
+  // useEffect를 사용해서 데이터가 로드되면 currentPage를 설정
+  useEffect(() => {
+    if (recommendation?.length) {
+      setCurrentPage(recommendation.length);
+    }
+  }, [recommendation]);
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  const totalPages = recommendation?.length ? recommendation.length : 0;
 
   const handlePrevPage = () => {
     if (currentPage > 1) {
@@ -20,10 +33,6 @@ const MovieRecommend = ({ onClose }) => {
       setCurrentPage(currentPage + 1);
     }
   };
-
-  const startIndex = (currentPage - 1) * moviesPerPage;
-  const endIndex = startIndex + moviesPerPage;
-  const currentMovies = movieList.slice(startIndex, endIndex);
 
   return (
     <>
@@ -60,22 +69,29 @@ const MovieRecommend = ({ onClose }) => {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
-          <div className="flex flex-col gap-4 items-center">
-            {currentMovies.map((movie) => (
-              <MovieCard
-                key={movie.id}
-                id={movie.id}
-                title={movie.title}
-                year={movie.year}
-                director={movie.director}
-                description={movie.description}
-                imageUrl={movie.imageUrl}
-                viewMode={0}
-              />
-            ))}
+        {totalPages > 0 ? (
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            <div className="flex flex-col gap-4 items-center">
+              {recommendation[currentPage - 1].map((movie) => (
+                <MovieCard
+                  key={movie.id}
+                  id={movie.id}
+                  title={movie.title}
+                  year={movie.release_date}
+                  director={movie.directors?.[0]?.name || ""}
+                  description={movie.overview}
+                  imageUrl={movie.poster_img_url}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            <div className="flex flex-col gap-4 items-center">
+              <div>추천 영화가 없습니다.</div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

@@ -1,4 +1,11 @@
-const fetchChatSSE = async (roomId, content, onToken, onDone, onError) => {
+const fetchChatSSE = async (
+  roomId,
+  content,
+  onToken,
+  onDone,
+  onError,
+  onRecommendation
+) => {
   try {
     const response = await fetch(
       `/api/chatrooms/${roomId}/messages?stream=true`,
@@ -35,10 +42,11 @@ const fetchChatSSE = async (roomId, content, onToken, onDone, onError) => {
           if (data) {
             try {
               const parsed = JSON.parse(data);
-              console.log(parsed.type);
 
               if (parsed.type === "recommendation") {
-                console.log(parsed.content);
+                if (parsed.content.length > 0) {
+                  onRecommendation(true);
+                }
               }
 
               onToken(parsed.content);

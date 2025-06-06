@@ -2,7 +2,9 @@ import { axiosInterceptor } from "@/apis/utils/axiosInterceptor";
 
 const deleteArchive = async (movieId) => {
   const response = await axiosInterceptor.delete(`/movies/archive`, {
-    id: movieId,
+    data: {
+      id: movieId,
+    },
   });
   return response.data;
 };
