@@ -44,11 +44,19 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
     """
     message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
     """
+    # 채팅방 ID를 session ID로 사용합니다.
+    session_id = str(room_id)
+    
     message = _preprocess_user_input(message)
     titles: list[str] = []
     ids: list[int] = []
     hints = qachat.extract_titles_and_metadata_with_llm(message)
-    if hints:
+    
+    # 제목이 명확할 경우에만 데이터를 가져옵니다.
+    if hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
+        titles = hints
+        
+    elif hints:
         print(f"[send_message_to_qachat] 감지된 영화 제목: {hints}")
         
         # llm.qachat.load_data 로직 + Moviechat DB 저장
@@ -62,7 +70,7 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
             titles.append(title)
             
             # 1. Let's see if it is cached on chroma
-            if qachat.is_cached_on_chroma(title):
+            if qachat.is_cached_on_chroma(title, session_id):
                 continue
             
             # 2. Too bad it wasn't cached. It's time to look inside our DB...
@@ -87,22 +95,20 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
                     db_update_wikipedia_data(db, movie.id, movie.wiki_document)
 
             # 5. 영화 리뷰를 불러옵니다. 3번째 인자를 None이 아닌 것으로 설정하면 그 수만큼만 리뷰를 불러옵니다
+            reviews = None # 영화가 여러 개 일 때 첫번째 영화의 리뷰만 불러오는 오류 해결
             reviews = db_get_movie_reviews(db, movie.id, None)
-            if not reviews:
+            if reviews != None:
                 print(f"{title}에 대한 리뷰가 DB에 없습니다. 리뷰를 크롤링 합니다...")
                 reviews = cast(list[str], crawler.get_watcha_reviews(title))
                 db_add_movie_reviews(db, movie.id, reviews)
 
             # 6. Let's cache it
-            qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews)
+            qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews, session_id)
             print(f"[send_message_to_qachat] chroma에 {title}(이)가 캐시되었습니다")
 
     else:
         print(f"[send_message_to_qachat] 감지된 영화 제목이 없습니다.")
     
-    # 채팅방 ID를 session ID로 사용합니다.
-    session_id = str(room_id)
-
     if not qachat.is_memory_on_cache(session_id):
         print(f"[send_message_to_qachat] session cache가 비어있습니다")
         context = db_get_chatroom_context(db, room_id).summary
