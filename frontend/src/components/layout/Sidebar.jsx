@@ -252,7 +252,7 @@ const Sidebar = () => {
         className="flex items-center justify-center"
       >
         <div className="bg-white rounded-lg p-6 w-[1000px] max-h-[80vh] overflow-y-auto">
-          <ImmersiveSelect />
+          <ImmersiveSelect onClose={() => setShowImmersiveModal(false)} />
         </div>
       </Modal>
     </div>
