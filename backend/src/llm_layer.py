@@ -91,7 +91,6 @@ def fuzzy_slow(db: Session, title: str, keyword: str|None, meta: MovieMeta|None)
     return movie
 
 
-
 def fuzzy_search(db: Session, title: str, keyword: str|None):
     print(f"[FUZZY]\nTITLE: {title}\nKEYWORD: {keyword}\n에 대한 로컬 DB 검색 중...")
     meta = chroma_fuzzy_search(title, [keyword] if keyword else None)

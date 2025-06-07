@@ -76,6 +76,7 @@ async def create_chatroom(user: UserInfoInternal = Depends(find_user_by_id),
         chats = chats
     )
 
+
 @app.delete("/api/chatrooms", response_model=DeleteChatroomResponse)
 async def delete_chatroom(payload: ChatroomIDRequest,
                           user: UserInfoInternal = Depends(find_user_by_id),
@@ -233,6 +234,17 @@ async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depen
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
 
+# ---------------------------
+# /movies/watchlist
+# ---------------------------
+@app.get("/api/movies/watchlist", response_model=List[Movie])
+async def get_user_watchlist(user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    try:
+        movies = db_get_watchlist(db, user.id)
+        return [public_movie_info(movie) for movie in movies]
+    except Exception as e:
+        print(e)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # ---------------------------
 # /movies/{id}

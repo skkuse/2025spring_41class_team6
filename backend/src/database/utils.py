@@ -326,6 +326,44 @@ def db_get_directors_of_movie(db: Session, movie_id: int):
   )
   return [PersonInfoInternal(id=i.id, name=i.name, profile_image_path=i.profile_path) for i in db.execute(stmt).scalars().all()]
 
+def db_get_watchlist(db: Session, user_id: int):
+  """
+  아카이브되었거나 북마크한 영화 정보를 불러옵니다.
+  character, platform 등의 정보가 필요하다면
+  db_find_movie_id를 추가로 사용하시면 됩니다.
+  만약 너무 불편하다면 말씀해주세요
+  """
+
+  archived_movies = (
+      sql.select(m.Movie)
+      .join(m.ArchivedMovie, m.Movie.id == m.ArchivedMovie.movie_id)
+      .where(m.ArchivedMovie.user_id == user_id)
+  )
+
+  bookmarked_movies = (
+      sql.select(m.Movie)
+      .join(m.BookmarkedMovie, m.Movie.id == m.BookmarkedMovie.movie_id)
+      .where(m.BookmarkedMovie.user_id == user_id)
+  )
+
+  union_stmt = sql.union(archived_movies, bookmarked_movies).subquery()
+
+  stmt = sql.select(m.Movie).distinct().select_from(union_stmt)
+
+  return [MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=movie.tmdb_id or 0,
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update,
+    genres=db_get_genres_of_movie(db, movie.id),
+    directors=db_get_directors_of_movie(db, movie.id),
+  ) for movie in db.execute(stmt).scalars().all()]
+
 def db_get_archived_movies(db: Session, user_id: int):
   """
   아카이브된 영화를 불러옵니다.  
@@ -438,8 +476,8 @@ def db_find_movie_by_id(db: Session, id: int, verbose: bool = True, user_id: int
     characters = [CharacterInfoInternal(
       id = character.id,
       name = character.name,
-      tone = character.tone,
-      description = character.description,
+      tone = character.tone or "",
+      description = character.description or "",
       actor = PersonInfoInternal(id = actor.id, name = actor.name, profile_image_path = actor.profile_path) if actor is not None else None
     ) for character, actor in db.execute(stmt_chara).all()]
 
@@ -523,6 +561,27 @@ def _upsert_actor(db: Session, actor: ActorInfo):
   db.add(doc)
   return doc
 
+def _upsert_character(db: Session, movie_id: int, character_name: str, actor: ActorInfo):
+  stmt = (
+    sql.select(m.CharacterProfile)
+    .where(m.CharacterProfile.movie_id == movie_id)
+    .where(m.CharacterProfile.name == character_name)
+    .where(m.CharacterProfile.actor_id == actor)
+  )
+  stmt = sql.select(m.Actor).where(m.Actor.tmdb_id == actor.person_id)
+  result = db.execute(stmt).scalar_one_or_none()
+  if result:
+    return result
+  
+  doc = m.Actor(
+    tmdb_id = actor.person_id,
+    name = actor.name,
+    original_name = actor.original_name,
+    profile_path = actor.profile_path
+  )
+  db.add(doc)
+  return doc
+
 def _upsert_platform(db: Session, platform: PlatformInfo):
   stmt = sql.select(m.Platform).where(m.Platform.tmdb_id == platform.tmdb_id)
   result = db.execute(stmt).scalar_one_or_none()
@@ -584,11 +643,19 @@ def upsert_movie_with_tmdb(db: Session, tmdb_data: TmdbRequestResult):
   # 캐릭터를 추가함 (begin)
   for a, i in pending_actors:
     cast_info = tmdb_data.casts[i]
+    stmt_c = (
+      sql.select(m.CharacterProfile.id)
+      .where(m.CharacterProfile.actor_id == a.id)
+      .where(m.CharacterProfile.name == cast_info.character)
+      .where(m.CharacterProfile.movie_id == doc.id)
+    )
+    ch_id = db.execute(stmt_c).scalar_one_or_none()
+    if ch_id:
+      continue
+
     ch = m.CharacterProfile(
       movie_id = doc.id,
       name = cast_info.character,
-      description = "",
-      tone = "",
       actor_id = a.id
     )
     db.add(ch)
