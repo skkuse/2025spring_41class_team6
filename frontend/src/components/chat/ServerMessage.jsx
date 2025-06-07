@@ -50,9 +50,6 @@ const ServerMessage = memo(({ status }) => {
       {/* 영화 아이콘 */}
       <MovieIcon className="w-4 h-4 text-gray-400" />
 
-      {/* 로딩 스피너 */}
-      <CircularProgress size={14} className="text-gray-400" thickness={4} />
-
       {/* 상태 메시지 */}
       <span className={`text-sm ${config.color}`}>{config.message}</span>
 

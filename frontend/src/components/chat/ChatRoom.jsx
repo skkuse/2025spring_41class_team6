@@ -51,7 +51,6 @@ const ChatRoom = () => {
     isMovieRecommendOpen,
     setWriteMessage,
     setIsMovieRecommendOpen,
-    resetChatroom,
     clearTokenQueue,
   } = useChatroomStore();
 
@@ -76,11 +75,6 @@ const ChatRoom = () => {
     streamingMessage,
     isStreaming
   );
-
-  // chatId 변경 시 상태 초기화
-  useEffect(() => {
-    resetChatroom();
-  }, [chatId, resetChatroom]);
 
   // 메시지 전송 핸들러
   const handleSendMessage = useCallback(() => {
@@ -116,6 +110,14 @@ const ChatRoom = () => {
     };
   }, [clearTokenQueue]);
 
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <CircularProgress />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 bg-white h-full w-full">
       {/* 메인 채팅 영역 */}
@@ -140,36 +142,49 @@ const ChatRoom = () => {
         </div>
 
         {/* 채팅 메시지 영역 */}
-        <div ref={containerRef} className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <CircularProgress />
+        {messages?.length > 0 || isStreaming ? (
+          <div ref={containerRef} className="flex-1 overflow-y-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <CircularProgress />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-8 w-[600px] mx-auto p-4">
+                {/* 메모이제이션된 메시지 리스트 */}
+                {messagesList}
+
+                {/* 임시 메시지: 내가 막 보낸 것 */}
+                {sendMessage && <SendChat message={sendMessage} />}
+
+                {/* 스트리밍 중인 메시지 */}
+                {streamingMessage && (
+                  <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
+                    <MarkdownChat>{streamingMessage}</MarkdownChat>
+                  </div>
+                )}
+
+                {/* 서버 프로세싱 안내 메시지 */}
+                <ServerMessage status={serverStatus} />
+
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center mt-auto">
+            <div className="mb-8 text-2xl text-gray-700 font-semibold">
+              {"영화에 대해 궁금한게 있으신가요?"}
             </div>
-          ) : (
-            <div className="flex flex-col gap-8 w-[600px] mx-auto p-4">
-              {/* 메모이제이션된 메시지 리스트 */}
-              {messagesList}
-
-              {/* 임시 메시지: 내가 막 보낸 것 */}
-              {sendMessage && <SendChat message={sendMessage} />}
-
-              {/* 서버 프로세싱 안내 메시지 */}
-              <ServerMessage status={serverStatus} />
-
-              {/* 스트리밍 중인 메시지 */}
-              {streamingMessage && (
-                <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
-                  <MarkdownChat>{streamingMessage}</MarkdownChat>
-                </div>
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* 하단 입력창 */}
-        <div className="w-full border-t border-gray-100 bg-white">
+        <div
+          className={`w-full border-t border-gray-100 bg-white ${
+            messages?.length === 0 && !isStreaming ? "mb-auto" : ""
+          }
+          }`}
+        >
           <div className="px-4 py-6">
             <div className="max-w-[700px] mx-auto">
               <div className="relative flex items-center gap-3 bg-gray-50 rounded-2xl px-1 py-1 shadow-sm border border-gray-100 transition-all duration-200 hover:shadow-md focus-within:shadow-md focus-within:border-gray-200">

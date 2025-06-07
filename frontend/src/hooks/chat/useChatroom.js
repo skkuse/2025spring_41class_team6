@@ -18,6 +18,7 @@ export const useChatMessageSend = (chatId) => {
         // fetchChatSSE 호출 시 완료 콜백 전달
         await fetchChatSSE(chatId, currentMessage, () => {
           // 쿼리 무효화
+          queryClient.invalidateQueries(["chatroomList"]);
           queryClient.invalidateQueries(["messagesList", chatId]);
           queryClient.invalidateQueries(["recommend", chatId]);
           useChatroomStore.getState().completeMessageSend();

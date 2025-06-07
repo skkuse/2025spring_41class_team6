@@ -2,13 +2,14 @@ import { FaPlus, FaRegCommentDots } from "react-icons/fa";
 import { useState } from "react";
 import useChatroomsList from "@/hooks/chat/useChatroomsList";
 import { useNavigate, useParams } from "react-router-dom";
+import useChatroomStore from "@/stores/useChatroomStore";
 
 const Sidebar = () => {
   const [mode, setMode] = useState("normal"); // "normal" 또는 "immersive"
   const navigate = useNavigate();
   const { data: chatrooms, isLoading } = useChatroomsList();
   const { chatId } = useParams();
-
+  const { resetChatroom } = useChatroomStore();
   if (isLoading) {
     return <div>Loading...</div>;
   }
@@ -57,7 +58,10 @@ const Sidebar = () => {
               className={`flex items-center gap-2 px-3 py-3 rounded-lg text-gray-700 text-sm cursor-pointer hover:bg-gray-200 transition mb-2 ${
                 conversation.id == chatId ? "bg-gray-200 font-medium" : ""
               }`}
-              onClick={() => navigate(`/chat/${conversation.id}`)}
+              onClick={() => {
+                navigate(`/chat/${conversation.id}`);
+                resetChatroom();
+              }}
             >
               <FaRegCommentDots className="text-lg text-gray-400" />
               {conversation.title}

@@ -28,7 +28,6 @@ const MovieDetail = ({ open, onClose, id }) => {
   const { mutate: deleteArchive } = useDeleteArchive();
 
   const { data: movie, isLoading } = useMovie(id);
-  console.log(movie);
   if (!open) return null;
   if (isLoading) return <div>Loading...</div>;
 
