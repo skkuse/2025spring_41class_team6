@@ -112,7 +112,7 @@ const MovieDetail = ({ open, onClose, id }) => {
               <h2 id="movie-modal-title" className="text-3xl font-bold mb-4">
                 {movie.title}
               </h2>
-              <div className="text-gray-500 text-sm mb-8">
+              <div className="text-gray-500 text-sm mb-6">
                 <span>{movie.release_date}</span> ·{" "}
                 <span>{movie.directors[0]?.name}</span> ·{" "}
               </div>
