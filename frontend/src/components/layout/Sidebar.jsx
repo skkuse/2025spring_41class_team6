@@ -1,15 +1,55 @@
 import { FaPlus, FaRegCommentDots } from "react-icons/fa";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useChatroomsList from "@/hooks/chat/useChatroomsList";
 import { useNavigate, useParams } from "react-router-dom";
 import useChatroomStore from "@/stores/useChatroomStore";
 
 const Sidebar = () => {
   const [mode, setMode] = useState("normal"); // "normal" 또는 "immersive"
+  const [showDeleteMenu, setShowDeleteMenu] = useState(false);
+  const [showConfirmMenu, setShowConfirmMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedChatId, setSelectedChatId] = useState(null);
   const navigate = useNavigate();
   const { data: chatrooms, isLoading } = useChatroomsList();
   const { chatId } = useParams();
   const { resetChatroom } = useChatroomStore();
+
+  useEffect(() => {
+    const handleClick = () => {
+      setShowDeleteMenu(false);
+      setShowConfirmMenu(false);
+    };
+
+    document.addEventListener("click", handleClick);
+    return () => {
+      document.removeEventListener("click", handleClick);
+    };
+  }, []);
+
+  const handleContextMenu = (e, conversationId) => {
+    e.preventDefault();
+    setMenuPosition({ x: e.clientX, y: e.clientY });
+    setSelectedChatId(conversationId);
+    setShowDeleteMenu(true);
+    setShowConfirmMenu(false);
+  };
+
+  const handleDelete = () => {
+    setShowDeleteMenu(false);
+    setShowConfirmMenu(true);
+  };
+
+  const confirmDelete = () => {
+    // TODO: 실제 삭제 로직 구현
+    console.log("Deleting chat:", selectedChatId);
+    setShowConfirmMenu(false);
+  };
+
+  const cancelDelete = () => {
+    setShowConfirmMenu(false);
+  };
+
   if (isLoading) {
     return <div>Loading...</div>;
   }
@@ -62,6 +102,7 @@ const Sidebar = () => {
                 navigate(`/chat/${conversation.id}`);
                 resetChatroom();
               }}
+              onContextMenu={(e) => handleContextMenu(e, conversation.id)}
             >
               <FaRegCommentDots className="text-lg text-gray-400" />
               {conversation.title}
@@ -69,6 +110,45 @@ const Sidebar = () => {
           )
         )}
       </div>
+
+      {/* 우클릭 메뉴 */}
+      {(showDeleteMenu || showConfirmMenu) && (
+        <div
+          className="fixed bg-white shadow-lg rounded-lg py-2 z-50"
+          style={{
+            top: menuPosition.y,
+            left: menuPosition.x,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {showDeleteMenu && (
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100"
+              onClick={handleDelete}
+            >
+              채팅방 삭제
+            </button>
+          )}
+          {showConfirmMenu && (
+            <div className="px-2">
+              <div className="flex flex-col gap-2">
+                <button
+                  className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded"
+                  onClick={cancelDelete}
+                >
+                  취소
+                </button>
+                <button
+                  className="px-3 py-1 text-sm bg-red-300 text-white rounded hover:bg-red-700"
+                  onClick={confirmDelete}
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
