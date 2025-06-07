@@ -63,42 +63,19 @@ async def get_chatrooms(user: UserInfoInternal = Depends(find_user_by_id), db: S
 
 
 @app.post("/api/chatrooms", response_model=CreateChatroomResponse)
-async def create_chatroom(payload: CreateChatroomRequest,
-                          user: UserInfoInternal = Depends(find_user_by_id),
+async def create_chatroom(user: UserInfoInternal = Depends(find_user_by_id),
                           db: Session = Depends(get_db)):
     room = db_make_new_chatroom(db, user.id)
     if room is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to create chatroom")
 
     chats = []
-    if not payload.initial_message:
-        return CreateChatroomResponse(
-            id = room.id,
-            title = room.title,
-            chats = chats
-        )
-
-    # 초기 메시지가 있었다면 메시지를 AI에게 보내고 응답을 chats에 append하여 반환
-    result = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
-    response = result["message"]
-    recommended = result["recommendation"]
-    result = db_append_chat_message(db, room.id, payload.initial_message, response, get_summary_from_qachat(room.id))
-    if result is None:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
-    else:
-        db_add_recommended_movies(db, result.id, recommended)
-    
-    chats.append(ChatHistory(
-        user_message=result.user_chat,
-        ai_message=result.ai_chat,
-        timestamp=result.timestamp
-    ))
-    
     return CreateChatroomResponse(
         id = room.id,
         title = room.title,
         chats = chats
     )
+
 
 @app.delete("/api/chatrooms", response_model=DeleteChatroomResponse)
 async def delete_chatroom(payload: ChatroomIDRequest,
