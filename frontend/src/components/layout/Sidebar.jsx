@@ -1,10 +1,17 @@
-import { FaPlus, FaRegCommentDots, FaEllipsisH } from "react-icons/fa";
+import {
+  FaPlus,
+  FaRegCommentDots,
+  FaEllipsisH,
+  FaUser,
+  FaSignOutAlt,
+} from "react-icons/fa";
 import { useState, useEffect } from "react";
 import useChatroomsList from "@/hooks/chat/useChatroomsList";
 import { useNavigate, useParams } from "react-router-dom";
 import useChatroomStore from "@/stores/useChatroomStore";
 import useDeleteChatroom from "@/hooks/chat/useDeleteChatroom";
-
+import { getUserInfo } from "@/apis/auth/getUserInfo";
+import { logoutUser } from "@/apis/auth/auth";
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
   if (!isOpen) return null;
 
@@ -41,11 +48,24 @@ const Sidebar = () => {
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [hoveredChatId, setHoveredChatId] = useState(null);
   const [selectedChatId, setSelectedChatId] = useState(null);
+  const [userInfo, setUserInfo] = useState(null);
   const navigate = useNavigate();
   const { data: chatrooms, isLoading } = useChatroomsList();
   const { chatId } = useParams();
   const { resetChatroom } = useChatroomStore();
   const { mutate: deleteChatroom } = useDeleteChatroom();
+
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const info = await getUserInfo();
+        setUserInfo(info);
+      } catch (error) {
+        console.error("사용자 정보 조회 실패:", error);
+      }
+    };
+    fetchUserInfo();
+  }, []);
 
   useEffect(() => {
     const handleClick = () => {
@@ -84,6 +104,11 @@ const Sidebar = () => {
 
   const cancelDelete = () => {
     setShowDeleteModal(false);
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    navigate("/");
   };
 
   if (isLoading) {
@@ -156,6 +181,29 @@ const Sidebar = () => {
             </div>
           )
         )}
+      </div>
+
+      {/* 사용자 정보 및 로그아웃 */}
+      <div className="mt-4 pt-4 border-t border-[#ececec]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+              <FaUser className="text-gray-500" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-700">
+                {userInfo?.nickname || "사용자"}
+              </p>
+              <p className="text-xs text-gray-500">{userInfo?.email}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-4 px-2 py-4 text-lg text-gray-600 hover:bg-gray-200 rounded-lg transition"
+          >
+            <FaSignOutAlt />
+          </button>
+        </div>
       </div>
 
       {/* 삭제 메뉴 */}
