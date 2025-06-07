@@ -17,8 +17,6 @@ const usePostArchive = () => {
     onSuccess: (data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["archiveList"] });
       queryClient.invalidateQueries({ queryKey: ["movie", payload.movie_id] });
-      console.log("Test");
-      console.log(data, payload);
     },
   });
 };
@@ -30,8 +28,6 @@ const usePutArchive = () => {
     onSuccess: (data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["archiveList"] });
       queryClient.invalidateQueries({ queryKey: ["movie", payload] });
-      console.log("Test");
-      console.log(data, payload);
     },
   });
 };
@@ -43,8 +39,6 @@ const useDeleteArchive = () => {
     onSuccess: (data, payload) => {
       queryClient.invalidateQueries({ queryKey: ["archiveList"] });
       queryClient.invalidateQueries({ queryKey: ["movie", payload] });
-      console.log("Test");
-      console.log(data, payload);
     },
   });
 };

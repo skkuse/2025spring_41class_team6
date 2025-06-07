@@ -1,11 +1,15 @@
-const fetchChatSSE = async (
-  roomId,
-  content,
-  onToken,
-  onDone,
-  onError,
-  onRecommendation
-) => {
+import useChatroomStore from "@/stores/useChatroomStore";
+
+const fetchChatSSE = async (roomId, content, onComplete) => {
+  // Zustand store에서 필요한 함수들 가져오기
+  const {
+    addToTokenQueue,
+    completeMessageSendWithCallback,
+    handleError,
+    setIsMovieRecommendOpen,
+    setServerStatus,
+  } = useChatroomStore.getState();
+
   try {
     const response = await fetch(
       `/api/chatrooms/${roomId}/messages?stream=true`,
@@ -16,8 +20,11 @@ const fetchChatSSE = async (
       }
     );
 
-    const reader = response.body.getReader();
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
 
+    const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
 
@@ -45,22 +52,42 @@ const fetchChatSSE = async (
 
               if (parsed.type === "recommendation") {
                 if (parsed.content.length > 0) {
-                  onRecommendation(true);
+                  setIsMovieRecommendOpen(true);
                 }
               }
 
-              onToken(parsed.content);
+              if (parsed.type === "signal") {
+                if (parsed.content === "crawling start") {
+                  setServerStatus(1);
+                }
+                if (parsed.content === "message start") {
+                  setServerStatus(2);
+                }
+                // if (parsed.content === "database start") {
+                //   setServerStatus(3);
+                // }
+              }
+
+              // 토큰을 큐에 추가
+              if (parsed.type === "message") {
+                addToTokenQueue([parsed.content]);
+              }
             } catch {
-              onToken(data);
+              // JSON 파싱 실패 시 raw data를 토큰으로 추가
+              addToTokenQueue([data]);
             }
           }
         }
       }
     }
 
-    onDone && onDone();
+    // 완료 처리 with 콜백
+    completeMessageSendWithCallback(onComplete);
   } catch (err) {
-    onError && onError(err);
+    // 에러 처리
+    handleError();
+    console.error("Chat SSE Error:", err);
+    alert("에러! " + err.message);
   }
 };
 
