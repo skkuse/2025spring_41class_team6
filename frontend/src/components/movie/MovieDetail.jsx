@@ -213,6 +213,7 @@ const MovieDetail = ({ open, onClose, id }) => {
                         character_name={character.name}
                         actor_name={character.actor.name}
                         image_url={character.actor.profile_image}
+                        character_id={character.id}
                       />
                     </div>
                   ))

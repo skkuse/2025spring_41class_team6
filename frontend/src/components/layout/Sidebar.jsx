@@ -12,6 +12,9 @@ import useChatroomStore from "@/stores/useChatroomStore";
 import useDeleteChatroom from "@/hooks/chat/useDeleteChatroom";
 import { getUserInfo } from "@/apis/auth/getUserInfo";
 import { logoutUser } from "@/apis/auth/auth";
+import { Modal } from "@mui/material";
+import ImmersiveSelect from "./ImmersiveSelect";
+
 const DeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
   if (!isOpen) return null;
 
@@ -42,9 +45,10 @@ const DeleteConfirmModal = ({ isOpen, onClose, onConfirm }) => {
 };
 
 const Sidebar = () => {
-  const [mode, setMode] = useState("normal"); // "normal" 또는 "immersiveㅅ"
+  const [mode, setMode] = useState("normal"); // "normal" 또는 "immersive"
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showImmersiveModal, setShowImmersiveModal] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [hoveredChatId, setHoveredChatId] = useState(null);
   const [selectedChatId, setSelectedChatId] = useState(null);
@@ -111,6 +115,14 @@ const Sidebar = () => {
     navigate("/");
   };
 
+  const handleNewChat = () => {
+    if (mode === "immersive") {
+      setShowImmersiveModal(true);
+    } else {
+      navigate("/chat");
+    }
+  };
+
   if (isLoading) {
     return <div>Loading...</div>;
   }
@@ -145,11 +157,12 @@ const Sidebar = () => {
       </div>
       {/* 새 대화 버튼 */}
       <button
-        onClick={() => navigate("/chat")}
+        onClick={handleNewChat}
         className="flex items-center justify-center gap-2 w-full py-3 mb-6 bg-white border border-[#ececec] rounded-lg text-sm font-medium hover:bg-gray-100 transition"
       >
         <FaPlus className="text-gray-500" />새 대화
       </button>
+
       {/* 대화 컨텍스트 목록 */}
       <div className="flex-1 overflow-y-auto">
         {(mode === "normal" ? normalConversations : immersiveConversations).map(
@@ -231,6 +244,17 @@ const Sidebar = () => {
         onClose={cancelDelete}
         onConfirm={confirmDelete}
       />
+
+      {/* 몰입형 대화 선택 모달 */}
+      <Modal
+        open={showImmersiveModal}
+        onClose={() => setShowImmersiveModal(false)}
+        className="flex items-center justify-center"
+      >
+        <div className="bg-white rounded-lg p-6 w-[1000px] max-h-[80vh] overflow-y-auto">
+          <ImmersiveSelect />
+        </div>
+      </Modal>
     </div>
   );
 };
