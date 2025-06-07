@@ -1,5 +1,6 @@
 SSE_SIGNAL = "signal"
 SSE_RECOMMEND = "recommendation"
+SSE_ROOM_TITLE = "room title"
 SSE_MESSAGE = "message"
 
 SSE_TYPE = "type"

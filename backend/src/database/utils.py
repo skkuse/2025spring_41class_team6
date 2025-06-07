@@ -208,7 +208,18 @@ def db_get_chat_messages(db: Session, user_id: int, room_id: int) -> List[ChatHi
     timestamp = chat.timestamp
   ) for chat in result]
 
+def db_get_chatroom_name(db: Session, room_id: int) -> str|None:
+  stmt = sql.select(m.ChatRoom.title).where(m.ChatRoom.id == room_id)
+  return db.execute(stmt).scalar_one_or_none()
 
+def db_update_chatroom_name(db: Session, room_id: int, name: str) -> bool:
+  stmt = sql.update(m.ChatRoom).where(m.ChatRoom.id == room_id).values(title=name)
+  try:
+    db.execute(stmt)
+    return True
+  except:
+    db.rollback()
+    return False
 
 def db_append_chat_message(db: Session, room_id: int, usr_msg: str, ai_msg: str, summary: dict) -> ChatHistoryInternal|None:
   import json

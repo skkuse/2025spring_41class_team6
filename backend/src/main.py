@@ -12,6 +12,8 @@ from typing import cast
 import llm.qachat as qa
 import json
 
+import llm.tools
+
 app = FastAPI()
 
 app.include_router(auth.router)
@@ -156,8 +158,8 @@ async def post_message(room_id: int,
             full_answer = ""
             recommended = []
             async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
-                t = chunk.get("type")
-                v = chunk.get("content")
+                t = sse_type(chunk)
+                v = sse_content(chunk)
                 if t == SSE_MESSAGE:
                     full_answer += cast(str, v)
                 elif t == SSE_RECOMMEND:
@@ -168,11 +170,18 @@ async def post_message(room_id: int,
                 # 버퍼링 방지
                 await asyncio.sleep(0)
 
+            if db_get_chatroom_name(db, room_id) == "new room":
+                new_title = llm.tools.generate_chat_title(full_answer)
+                if db_update_chatroom_name(db, room_id, new_title):
+                    yield f"data: {json.dumps(make_sse(SSE_ROOM_TITLE, new_title))}\n\n"
+
             result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
+
             if result is None:
                 print("something went wrong...")
-            else:
-              db_add_recommended_movies(db, result.id, recommended)
+            elif recommended:
+                db_add_recommended_movies(db, result.id, recommended)
+            yield f"data: {json.dumps(make_sse(SSE_SIGNAL, SSE_FINISH))}\n\n"
 
         return StreamingResponse(
             event_generator(),

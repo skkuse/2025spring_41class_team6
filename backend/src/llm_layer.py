@@ -3,7 +3,7 @@ import llm.crawler as crawler
 from database.utils import *
 import json
 from langchain.schema import messages_to_dict, messages_from_dict
-from typing import TypedDict
+from typing import AsyncGenerator, TypedDict
 
 from database.chroma import *
 from datetime import datetime, timezone
@@ -135,7 +135,7 @@ def fuzzy_search(db: Session, title: str, keyword: str|None):
     return movie
 
 
-async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
+async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> AsyncGenerator[dict[str, Any], Any]:
     """
     message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
     """
@@ -240,4 +240,3 @@ async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int,
                 ids.append(movie.id)
 
         yield make_sse(SSE_RECOMMEND, ids)
-    yield make_sse(SSE_SIGNAL, SSE_FINISH)
