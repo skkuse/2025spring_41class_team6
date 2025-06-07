@@ -3,6 +3,7 @@ from fastapi import FastAPI, Path, Body, Query, Response, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from datetime import datetime
 from api_schema import *
+from sse import *
 from llm_layer import get_summary_from_qachat, send_message_to_qachat, stream_send_message_to_qachat
 from database.utils import *
 from common.env import *
@@ -157,9 +158,9 @@ async def post_message(room_id: int,
             async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
                 t = chunk.get("type")
                 v = chunk.get("content")
-                if t == "message":
+                if t == SSE_MESSAGE:
                     full_answer += cast(str, v)
-                elif t == "recommendation":
+                elif t == SSE_RECOMMEND:
                     recommended = cast(list[int], v)
 
                 yield f"data: {json.dumps(chunk)}\n\n"
