@@ -1,160 +1,120 @@
-// hooks/useChatroom.js
-import { useEffect, useCallback, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import useChatroomStore from "@/stores/useChatroomStore";
-import fetchChatSSE from "@/apis/chat/fetchchatSSE";
+import { create } from "zustand";
 
-// 채팅 메시지 전송 훅
-export const useChatMessageSend = (chatId) => {
-  const queryClient = useQueryClient();
-  const {
-    writeMessage,
-    isStreaming,
-    prepareMessageSend,
-    completeMessageSend,
-    handleError,
-    addToTokenQueue,
-    setIsMovieRecommendOpen,
-  } = useChatroomStore();
+const useChatroomStore = create((set, get) => ({
+  // 채팅방 상태
+  chatroomId: null,
+  writeMessage: "",
+  sendMessage: "",
+  streamingMessage: "",
+  isStreaming: false,
+  serverStatus: 0,
+  isMovieRecommendOpen: false,
 
-  const sendMessage = useCallback(async () => {
-    if (writeMessage.trim() && !isStreaming) {
-      const currentMessage = writeMessage;
-      prepareMessageSend(currentMessage);
+  // 내부 상태 (UI 관련)
+  tokenQueue: [],
 
-      try {
-        await fetchChatSSE(
-          chatId,
-          currentMessage,
-          async (token) => {
-            addToTokenQueue([token]);
-          },
-          async () => {
-            completeMessageSend();
-            queryClient.invalidateQueries(["messagesList", chatId]);
-            queryClient.invalidateQueries(["recommend", chatId]);
-          },
-          (err) => {
-            handleError();
-            alert("에러! " + err.message);
-          },
-          (open) => {
-            setIsMovieRecommendOpen(open);
-          }
-        );
-      } catch (error) {
-        console.error("Failed to send message:", error);
-        handleError();
-      }
-    }
-  }, [
-    writeMessage,
-    isStreaming,
-    chatId,
-    queryClient,
-    prepareMessageSend,
-    completeMessageSend,
-    handleError,
-    addToTokenQueue,
-    setIsMovieRecommendOpen,
-  ]);
+  // Actions
+  setChatroomId: (chatroomId) => set({ chatroomId }),
+  setWriteMessage: (writeMessage) => set({ writeMessage }),
+  setSendMessage: (sendMessage) => set({ sendMessage }),
+  setStreamingMessage: (streamingMessage) => set({ streamingMessage }),
+  setIsStreaming: (isStreaming) => set({ isStreaming }),
+  setServerStatus: (serverStatus) => set({ serverStatus }),
+  setIsMovieRecommendOpen: (isMovieRecommendOpen) =>
+    set({ isMovieRecommendOpen }),
 
-  return sendMessage;
-};
+  // 토큰 큐 관련
+  addToTokenQueue: (tokens) =>
+    set((state) => ({
+      tokenQueue: [...state.tokenQueue, ...tokens],
+    })),
+  clearTokenQueue: () => set({ tokenQueue: [] }),
+  popTokens: (count = 3) => {
+    const state = get();
+    const tokenQueue = [...state.tokenQueue];
+    const tokens = tokenQueue.splice(0, Math.min(count, tokenQueue.length));
+    set({ tokenQueue });
+    return tokens;
+  },
 
-// 타이핑 애니메이션 훅
-export const useTypingAnimation = () => {
-  const { isStreaming, popTokens, appendToStreamingMessage } =
-    useChatroomStore();
-  const animationFrameId = useRef(null);
+  // 스트리밍 메시지 추가
+  appendToStreamingMessage: (text) =>
+    set((state) => ({
+      streamingMessage: state.streamingMessage + text,
+    })),
 
-  const getRandomTypingDelay = useCallback(() => {
-    const randomVariation = Math.random();
-    if (randomVariation < 0.4) return 20;
-    else if (randomVariation < 0.85) return 70;
-    else return 150;
-  }, []);
-
-  useEffect(() => {
-    if (!isStreaming) return;
-
-    let lastTime = 0;
-
-    const animate = (currentTime) => {
-      if (currentTime - lastTime >= getRandomTypingDelay()) {
-        const tokens = popTokens();
-        if (tokens.length > 0) {
-          appendToStreamingMessage(tokens.join(""));
-        }
-        lastTime = currentTime;
-      }
-
-      if (isStreaming || useChatroomStore.getState().tokenQueue.length > 0) {
-        animationFrameId.current = requestAnimationFrame(animate);
-      }
-    };
-
-    animationFrameId.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
-    };
-  }, [isStreaming, getRandomTypingDelay, popTokens, appendToStreamingMessage]);
-};
-
-// 자동 스크롤 훅
-export const useAutoScroll = (
-  messages,
-  sendMessage,
-  streamingMessage,
-  isStreaming
-) => {
-  const lastScrollTime = useRef(0);
-  const animationFrameId = useRef(null);
-  const messagesEndRef = useRef(null);
-
-  const scrollToBottom = useCallback(() => {
-    const now = Date.now();
-    if (now - lastScrollTime.current < 50) return; // 스크롤 throttle을 50ms로 줄임
-
-    lastScrollTime.current = now;
-    if (animationFrameId.current) {
-      cancelAnimationFrame(animationFrameId.current);
-    }
-
-    animationFrameId.current = requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // 메시지 전송 준비
+  prepareMessageSend: (message) => {
+    set({
+      sendMessage: message,
+      streamingMessage: "",
+      isStreaming: true,
+      writeMessage: "",
+      tokenQueue: [],
+      serverStatus: 2,
     });
-  }, []);
+  },
 
-  // 메시지 리스트 변경 시 스크롤
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages?.length, scrollToBottom]);
+  // 메시지 전송 완료
+  completeMessageSend: () => {
+    set({
+      sendMessage: "",
+      streamingMessage: "",
+      isStreaming: false,
+      tokenQueue: [],
+      serverStatus: 0,
+    });
+  },
 
-  // 메시지 전송 시 스크롤
-  useEffect(() => {
-    if (sendMessage) {
-      scrollToBottom();
-    }
-  }, [sendMessage, scrollToBottom]);
+  // 메시지 전송 완료 with 콜백
+  completeMessageSendWithCallback: (callback) => {
+    set({
+      sendMessage: "",
+      streamingMessage: "",
+      isStreaming: false,
+      tokenQueue: [],
+      serverStatus: 0,
+    });
+    callback && callback();
+  },
 
-  // 스트리밍 중일 때 스크롤
-  useEffect(() => {
-    if (isStreaming && streamingMessage) {
-      scrollToBottom();
-    }
-  }, [streamingMessage, isStreaming, scrollToBottom]);
+  // 에러 처리
+  handleError: () => {
+    set({
+      isStreaming: false,
+      sendMessage: "",
+      streamingMessage: "",
+      tokenQueue: [],
+      serverStatus: 4,
+    });
+  },
 
-  useEffect(() => {
-    return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
-    };
-  }, []);
+  // 채팅방 변경 시 초기화
+  resetChatroom: () => {
+    set({
+      writeMessage: "",
+      sendMessage: "",
+      streamingMessage: "",
+      isStreaming: false,
+      serverStatus: 0,
+      tokenQueue: [],
+      isMovieRecommendOpen: false,
+    });
+  },
 
-  return { messagesEndRef, scrollToBottom };
-};
+  // 전체 초기화
+  resetAll: () => {
+    set({
+      chatroomId: null,
+      writeMessage: "",
+      sendMessage: "",
+      streamingMessage: "",
+      isStreaming: false,
+      serverStatus: 3,
+      tokenQueue: [],
+      isMovieRecommendOpen: false,
+    });
+  },
+}));
+
+export default useChatroomStore;

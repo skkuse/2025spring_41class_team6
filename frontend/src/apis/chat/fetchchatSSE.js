@@ -7,6 +7,7 @@ const fetchChatSSE = async (roomId, content, onComplete) => {
     completeMessageSendWithCallback,
     handleError,
     setIsMovieRecommendOpen,
+    setServerStatus,
   } = useChatroomStore.getState();
 
   try {
@@ -52,6 +53,25 @@ const fetchChatSSE = async (roomId, content, onComplete) => {
               if (parsed.type === "recommendation") {
                 if (parsed.content.length > 0) {
                   setIsMovieRecommendOpen(true);
+                }
+              }
+
+              if (parsed.type === "signal") {
+                if (parsed.content === "crawling start") {
+                  setServerStatus(1);
+                }
+                if (parsed.content === "message start") {
+                  setServerStatus(2);
+                }
+                if (parsed.content === "database start") {
+                  setServerStatus(3);
+                }
+                if (
+                  parsed.content === "database end" ||
+                  parsed.content === "crawling end" ||
+                  parsed.content === "message end"
+                ) {
+                  setServerStatus(0);
                 }
               }
 
