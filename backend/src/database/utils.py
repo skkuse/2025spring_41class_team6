@@ -335,20 +335,22 @@ def db_get_watchlist(db: Session, user_id: int):
   """
 
   archived_movies = (
-      sql.select(m.Movie)
+      sql.select(m.Movie.id)
       .join(m.ArchivedMovie, m.Movie.id == m.ArchivedMovie.movie_id)
       .where(m.ArchivedMovie.user_id == user_id)
   )
 
   bookmarked_movies = (
-      sql.select(m.Movie)
+      sql.select(m.Movie.id)
       .join(m.BookmarkedMovie, m.Movie.id == m.BookmarkedMovie.movie_id)
       .where(m.BookmarkedMovie.user_id == user_id)
   )
 
+  # 중복 제거된 Movie ID들만 union
   union_stmt = sql.union(archived_movies, bookmarked_movies).subquery()
 
-  stmt = sql.select(m.Movie).distinct().select_from(union_stmt)
+  # 다시 Movie 전체 객체 가져오기
+  stmt = sql.select(m.Movie).where(m.Movie.id.in_(sql.select(union_stmt.c.id)))
 
   return [MovieInfoInternal(
     id=movie.id,
