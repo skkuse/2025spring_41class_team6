@@ -326,6 +326,44 @@ def db_get_directors_of_movie(db: Session, movie_id: int):
   )
   return [PersonInfoInternal(id=i.id, name=i.name, profile_image_path=i.profile_path) for i in db.execute(stmt).scalars().all()]
 
+def db_get_watchlist(db: Session, user_id: int):
+  """
+  아카이브되었거나 북마크한 영화 정보를 불러옵니다.
+  character, platform 등의 정보가 필요하다면
+  db_find_movie_id를 추가로 사용하시면 됩니다.
+  만약 너무 불편하다면 말씀해주세요
+  """
+
+  archived_movies = (
+      sql.select(m.Movie)
+      .join(m.ArchivedMovie, m.Movie.id == m.ArchivedMovie.movie_id)
+      .where(m.ArchivedMovie.user_id == user_id)
+  )
+
+  bookmarked_movies = (
+      sql.select(m.Movie)
+      .join(m.BookmarkedMovie, m.Movie.id == m.BookmarkedMovie.movie_id)
+      .where(m.BookmarkedMovie.user_id == user_id)
+  )
+
+  union_stmt = sql.union(archived_movies, bookmarked_movies).subquery()
+
+  stmt = sql.select(m.Movie).distinct().select_from(union_stmt)
+
+  return [MovieInfoInternal(
+    id=movie.id,
+    tmdb_id=movie.tmdb_id or 0,
+    title=movie.title,
+    tmdb_overview=movie.tmdb_overview,
+    wiki_document=movie.wiki_document,
+    release_date=movie.release_date,
+    poster_img_url=movie.poster_img_url,
+    trailer_img_url=movie.trailer_img_url,
+    last_update=movie.last_update,
+    genres=db_get_genres_of_movie(db, movie.id),
+    directors=db_get_directors_of_movie(db, movie.id),
+  ) for movie in db.execute(stmt).scalars().all()]
+
 def db_get_archived_movies(db: Session, user_id: int):
   """
   아카이브된 영화를 불러옵니다.  
