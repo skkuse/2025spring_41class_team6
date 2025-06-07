@@ -20,6 +20,7 @@ export const useChatMessageSend = (chatId) => {
           // 쿼리 무효화
           queryClient.invalidateQueries(["messagesList", chatId]);
           queryClient.invalidateQueries(["recommend", chatId]);
+          useChatroomStore.getState().completeMessageSend();
         });
       } catch (error) {
         console.error("Failed to send message:", error);
@@ -109,12 +110,13 @@ export const useAutoScroll = (
     }
   }, [sendMessage, scrollToBottom]);
 
-  // 스트리밍 중일 때 스크롤
+  // 스트리밍 중일 때 스크롤 - 이 부분을 개선
   useEffect(() => {
     if (isStreaming && streamingMessage) {
-      scrollToBottom();
+      // throttle 없이 바로 스크롤
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [streamingMessage, isStreaming, scrollToBottom]);
+  }, [streamingMessage, isStreaming]);
 
   useEffect(() => {
     return () => {

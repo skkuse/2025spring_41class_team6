@@ -69,12 +69,13 @@ const ChatRoom = () => {
   const sendChatMessage = useChatMessageSend(chatId);
   useTypingAnimation();
 
-  // 자동 스크롤 - 의존성 배열에 필요한 값들 추가
-  const { messagesEndRef } = useAutoScroll([
-    messages?.length,
+  // 자동 스크롤 - 개별 dependency로 전달
+  const { messagesEndRef } = useAutoScroll(
+    messages,
     sendMessage,
-    streamingMessage && isStreaming,
-  ]);
+    streamingMessage,
+    isStreaming
+  );
 
   // chatId 변경 시 상태 초기화
   useEffect(() => {
@@ -168,24 +169,49 @@ const ChatRoom = () => {
         </div>
 
         {/* 하단 입력창 */}
-        <div className="w-full border-t border-[#ececec] p-4 flex items-center justify-center bg-white mb-4">
-          <div className="w-[600px] flex items-center">
-            <input
-              type="text"
-              value={writeMessage}
-              onChange={(e) => setWriteMessage(e.target.value)}
-              onKeyDown={handleKeyPress}
-              className="flex-1 border border-[#ececec] rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
-              placeholder="메시지를 입력하세요..."
-              disabled={isStreaming}
-            />
-            <button
-              className="ml-2 bg-black text-white rounded-md p-2 hover:bg-gray-800 transition"
-              onClick={handleSendMessage}
-              disabled={isStreaming}
-            >
-              <SendIcon className="w-5 h-5" />
-            </button>
+        <div className="w-full border-t border-gray-100 bg-white">
+          <div className="px-4 py-6">
+            <div className="max-w-[700px] mx-auto">
+              <div className="relative flex items-center gap-3 bg-gray-50 rounded-2xl px-1 py-1 shadow-sm border border-gray-100 transition-all duration-200 hover:shadow-md focus-within:shadow-md focus-within:border-gray-200">
+                <textarea
+                  value={writeMessage}
+                  onChange={(e) => setWriteMessage(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  className="
+                    flex-1 bg-transparent px-5 py-4 text-base placeholder:text-gray-400
+                    focus:outline-none resize-none overflow-y-auto
+                  "
+                  placeholder="영화에 대해 무엇이든 물어보세요..."
+                  disabled={isStreaming}
+                />
+                <button
+                  className={`
+                    flex items-center justify-center
+                    bg-gray-900 text-white 
+                    rounded-xl p-3 mr-1
+                    transition-all duration-200
+                    ${
+                      isStreaming
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-black hover:scale-105 active:scale-95"
+                    }
+                  `}
+                  onClick={handleSendMessage}
+                  disabled={isStreaming}
+                >
+                  {isStreaming ? (
+                    <CircularProgress size={20} className="text-white" />
+                  ) : (
+                    <SendIcon className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+              <div className="flex items-center justify-between mt-3 px-2">
+                <p className="text-xs text-gray-400 ml-2">
+                  Enter로 전송, Shift+Enter로 줄바꿈
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

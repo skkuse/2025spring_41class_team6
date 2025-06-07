@@ -63,20 +63,15 @@ const fetchChatSSE = async (roomId, content, onComplete) => {
                 if (parsed.content === "message start") {
                   setServerStatus(2);
                 }
-                if (parsed.content === "database start") {
-                  setServerStatus(3);
-                }
-                if (
-                  parsed.content === "database end" ||
-                  parsed.content === "crawling end" ||
-                  parsed.content === "message end"
-                ) {
-                  setServerStatus(0);
-                }
+                // if (parsed.content === "database start") {
+                //   setServerStatus(3);
+                // }
               }
 
               // 토큰을 큐에 추가
-              addToTokenQueue([parsed.content]);
+              if (parsed.type === "message") {
+                addToTokenQueue([parsed.content]);
+              }
             } catch {
               // JSON 파싱 실패 시 raw data를 토큰으로 추가
               addToTokenQueue([data]);

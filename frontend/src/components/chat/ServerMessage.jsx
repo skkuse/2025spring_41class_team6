@@ -1,47 +1,28 @@
 import { memo } from "react";
 import CircularProgress from "@mui/material/CircularProgress";
-import SearchIcon from "@mui/icons-material/Search";
-import StorageIcon from "@mui/icons-material/Storage";
 import MovieIcon from "@mui/icons-material/Movie";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import AnalyticsIcon from "@mui/icons-material/Analytics";
 
-// 상태별 메시지와 아이콘 정의
+// 상태별 메시지 정의 - 차분한 톤으로 통일
 const STATUS_CONFIG = {
   1: {
-    message: "크롤링 진행하는 중...",
-    icon: <SearchIcon className="w-4 h-4 text-blue-500" />,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50",
-    borderColor: "border-blue-200",
+    message: "영화 정보를 검색하고 있습니다",
+    color: "text-gray-600",
   },
   2: {
-    message: "메시지 작성 중...",
-    icon: <StorageIcon className="w-4 h-4 text-green-500" />,
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
+    message: "답변을 준비하고 있습니다",
+    color: "text-gray-600",
   },
   3: {
-    message: "데이터베이스 탐색 중...",
-    icon: <MovieIcon className="w-4 h-4 text-purple-500" />,
-    color: "text-purple-600",
-    bgColor: "bg-purple-50",
-    borderColor: "border-purple-200",
+    message: "데이터베이스를 확인하고 있습니다",
+    color: "text-gray-600",
   },
   4: {
-    message: "에러 발생..",
-    icon: <AutoAwesomeIcon className="w-4 h-4 text-orange-500" />,
-    color: "text-orange-600",
-    bgColor: "bg-orange-50",
-    borderColor: "border-orange-200",
+    message: "일시적인 문제가 발생했습니다",
+    color: "text-gray-500",
   },
   5: {
-    message: "결과 정리 중...",
-    icon: <AnalyticsIcon className="w-4 h-4 text-indigo-500" />,
-    color: "text-indigo-600",
-    bgColor: "bg-indigo-50",
-    borderColor: "border-indigo-200",
+    message: "결과를 정리하고 있습니다",
+    color: "text-gray-600",
   },
 };
 
@@ -56,57 +37,61 @@ const ServerMessage = memo(({ status }) => {
   // 정의되지 않은 상태값에 대한 기본 처리
   if (!config) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg shadow-sm">
-        <CircularProgress size={16} className="text-gray-400" />
-        <span className="text-sm text-gray-600 font-medium">
-          처리 중... (상태: {status})
-        </span>
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg">
+        <MovieIcon className="w-4 h-4 text-gray-400" />
+        <CircularProgress size={14} className="text-gray-400" />
+        <span className="text-sm text-gray-500">처리 중입니다</span>
       </div>
     );
   }
 
   return (
-    <div
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-sm border transition-all duration-300 ${config.bgColor} ${config.borderColor}`}
-    >
-      {/* 아이콘과 로딩 스피너 */}
-      <div className="flex items-center gap-2">
-        {config.icon}
-        <CircularProgress
-          size={16}
-          className={config.color.replace("text-", "text-")}
-        />
-      </div>
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg transition-all duration-300">
+      {/* 영화 아이콘 */}
+      <MovieIcon className="w-4 h-4 text-gray-400" />
+
+      {/* 로딩 스피너 */}
+      <CircularProgress size={14} className="text-gray-400" thickness={4} />
 
       {/* 상태 메시지 */}
-      <span className={`text-sm font-medium ${config.color}`}>
-        {config.message}
-      </span>
+      <span className={`text-sm ${config.color}`}>{config.message}</span>
 
-      {/* 점점점 애니메이션 */}
-      <div className="flex gap-1">
+      {/* 점점점 애니메이션 - 더 차분하게 */}
+      <div className="flex gap-0.5 ml-1">
         <div
-          className={`w-1 h-1 rounded-full ${config.color.replace(
-            "text-",
-            "bg-"
-          )} animate-pulse`}
-          style={{ animationDelay: "0ms" }}
+          className="w-1 h-1 rounded-full bg-gray-400 opacity-60"
+          style={{
+            animation: "fade 1.4s infinite",
+            animationDelay: "0ms",
+          }}
         ></div>
         <div
-          className={`w-1 h-1 rounded-full ${config.color.replace(
-            "text-",
-            "bg-"
-          )} animate-pulse`}
-          style={{ animationDelay: "200ms" }}
+          className="w-1 h-1 rounded-full bg-gray-400 opacity-60"
+          style={{
+            animation: "fade 1.4s infinite",
+            animationDelay: "400ms",
+          }}
         ></div>
         <div
-          className={`w-1 h-1 rounded-full ${config.color.replace(
-            "text-",
-            "bg-"
-          )} animate-pulse`}
-          style={{ animationDelay: "400ms" }}
+          className="w-1 h-1 rounded-full bg-gray-400 opacity-60"
+          style={{
+            animation: "fade 1.4s infinite",
+            animationDelay: "800ms",
+          }}
         ></div>
       </div>
+
+      <style jsx>{`
+        @keyframes fade {
+          0%,
+          100% {
+            opacity: 0.3;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 });
