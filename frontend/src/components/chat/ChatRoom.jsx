@@ -8,7 +8,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import fetchChatSSE from "@/apis/chat/fetchchatSSE";
 import MarkdownChat from "@/components/chat/MarkdownChat";
 import SendChat from "@/components/chat/SendChat";
-import LoadingChat from "@/components/chat/LoadingChat";
+import MovieRecommend from "@/components/layout/MovieRecommend";
+import MenuOpenIcon from "@mui/icons-material/MenuOpen";
 
 // 메모이제이션된 메시지 컴포넌트
 const MemoizedMessage = memo(({ msg }) => (
@@ -19,10 +20,23 @@ const MemoizedMessage = memo(({ msg }) => (
         <MarkdownChat>{msg.ai_message}</MarkdownChat>
       </span>
     )}
+    {msg.timestamp && (
+      <div className="text-xs text-gray-400 mt-2">
+        {new Date(msg.timestamp).toLocaleString("ko-KR", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })}
+      </div>
+    )}
   </div>
 ));
 
 const ChatRoom = () => {
+  //////////////////// 로컬 상태 ////////////////////
   const [message, setMessage] = useState("");
   const [sendMessage, setSendMessage] = useState("");
   const [displayedMessage, setDisplayedMessage] = useState("");
@@ -31,12 +45,15 @@ const ChatRoom = () => {
   const tokenQueue = useRef([]);
   const animationFrameId = useRef(null);
   const lastScrollTime = useRef(0);
+  const [isMovieRecommendOpen, setIsMovieRecommendOpen] = useState(false);
 
-  const navigate = useNavigate();
-  const { chatId } = useParams();
-  const { data: messages, isLoading } = useMessagesList(chatId);
   const messagesEndRef = useRef(null);
   const containerRef = useRef(null);
+  const navigate = useNavigate();
+  const { chatId } = useParams();
+
+  //////////////////// 서버 상태 fetch ////////////////////
+  const { data: messages, isLoading } = useMessagesList(chatId);
 
   const getRandomTypingDelay = useCallback(() => {
     const randomVariation = Math.random();
@@ -45,10 +62,10 @@ const ChatRoom = () => {
     else return 150;
   }, []);
 
-  // 스크롤 최적화 - debounce와 requestAnimationFrame 사용
+  // 스크롤 함수
   const scrollToBottom = useCallback(() => {
     const now = Date.now();
-    if (now - lastScrollTime.current < 100) return; // 100ms 디바운스
+    if (now - lastScrollTime.current < 100) return;
 
     lastScrollTime.current = now;
     if (animationFrameId.current) {
@@ -60,7 +77,12 @@ const ChatRoom = () => {
     });
   }, []);
 
-  // 타이핑 애니메이션 최적화
+  // chatId 변경 상태 변경
+  useEffect(() => {
+    setIsMovieRecommendOpen(false);
+  }, [chatId]);
+
+  // 타이핑 애니메이션
   useEffect(() => {
     if (!isStreaming) return;
 
@@ -70,7 +92,6 @@ const ChatRoom = () => {
     const animate = (currentTime) => {
       if (currentTime - lastTime >= getRandomTypingDelay()) {
         if (tokenQueue.current.length > 0) {
-          // 한 번에 여러 토큰 처리하여 성능 개선
           const tokensToAdd = tokenQueue.current.splice(
             0,
             Math.min(3, tokenQueue.current.length)
@@ -92,7 +113,7 @@ const ChatRoom = () => {
     };
   }, [isStreaming, getRandomTypingDelay]);
 
-  // 스크롤 이벤트 최적화 - 의존성 분리
+  // 스크롤 이벤트
   useEffect(() => {
     scrollToBottom();
   }, [messages?.length, scrollToBottom]);
@@ -110,7 +131,7 @@ const ChatRoom = () => {
     }
   }, [displayedMessage, isStreaming, scrollToBottom]);
 
-  // 메시지 전송 - ref를 사용하여 최신 값 참조
+  // 메시지 전송
   const messageRef = useRef(message);
   messageRef.current = message;
 
@@ -136,12 +157,16 @@ const ChatRoom = () => {
             setIsStreaming(false);
             // 배치 업데이트로 리렌더링 최소화
             queryClient.invalidateQueries(["messagesList", chatId]);
+            queryClient.invalidateQueries(["recommend", chatId]);
           },
           (err) => {
             setIsStreaming(false);
             setSendMessage("");
             setDisplayedMessage("");
             alert("에러! " + err.message);
+          },
+          (open) => {
+            setIsMovieRecommendOpen(open);
           }
         );
       } catch (error) {
@@ -187,64 +212,89 @@ const ChatRoom = () => {
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col bg-white h-full">
-      {/* 북마크 버튼 */}
-      <div className="flex justify-end p-6">
-        <button
-          onClick={() => navigate("/history")}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
-        >
-          <BookmarkBorderIcon className="w-5 h-5" />
-          <span className="text-sm font-medium">북마크</span>
-        </button>
-      </div>
-
-      {/* 채팅 메시지 영역 */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <CircularProgress />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-8 w-160 mx-auto p-4">
-            {/* 메모이제이션된 메시지 리스트 */}
-            {messagesList}
-
-            {/* 임시 메시지: 내가 막 보낸 것 */}
-            {sendMessage && <SendChat message={sendMessage} />}
-
-            {/* 스트리밍 중인 메시지 */}
-            {displayedMessage && (
-              <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
-                <MarkdownChat>{displayedMessage}</MarkdownChat>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
-
-      {/* 하단 입력창 - 별도 컴포넌트로 분리하면 더 좋음 */}
-      <div className="w-full border-t border-[#ececec] p-4 flex items-center justify-center bg-white mb-4">
-        <div className="w-3/4 flex items-center">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyPress}
-            className="flex-1 border border-[#ececec] rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
-            placeholder="메시지를 입력하세요..."
-            disabled={isStreaming}
-          />
+    <div className="flex flex-1 bg-white h-full w-full">
+      {/* 메인 채팅 영역 */}
+      <div className=" flex flex-col w-full">
+        {/* 북마크 버튼 */}
+        <div className="flex justify-end p-6">
           <button
-            className="ml-2 bg-black text-white rounded-md p-2 hover:bg-gray-800 transition"
-            onClick={handleSendMessage}
-            disabled={isStreaming}
+            onClick={() => navigate("/history")}
+            className="flex items-center gap-2 px-4 py-2 mr-4 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
           >
-            <SendIcon className="w-5 h-5" />
+            <BookmarkBorderIcon className="w-5 h-5" />
+            <span className="text-sm font-medium">북마크</span>
           </button>
+          {!isMovieRecommendOpen && (
+            <button
+              onClick={() => setIsMovieRecommendOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition"
+            >
+              <MenuOpenIcon className="w-5 h-5" />
+            </button>
+          )}
         </div>
+
+        {/* 채팅 메시지 영역 */}
+        <div ref={containerRef} className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <CircularProgress />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-8 w-[600px] mx-auto p-4">
+              {/* 메모이제이션된 메시지 리스트 */}
+              {messagesList}
+
+              {/* 임시 메시지: 내가 막 보낸 것 */}
+              {sendMessage && <SendChat message={sendMessage} />}
+
+              {/* 스트리밍 중인 메시지 */}
+              {displayedMessage && (
+                <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
+                  <MarkdownChat>{displayedMessage}</MarkdownChat>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* 하단 입력창 */}
+        <div className="w-full border-t border-[#ececec] p-4 flex items-center justify-center bg-white mb-4">
+          <div className="w-[600px] flex items-center">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyPress}
+              className="flex-1 border border-[#ececec] rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
+              placeholder="메시지를 입력하세요..."
+              disabled={isStreaming}
+            />
+            <button
+              className="ml-2 bg-black text-white rounded-md p-2 hover:bg-gray-800 transition"
+              onClick={handleSendMessage}
+              disabled={isStreaming}
+            >
+              <SendIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 영화 추천 사이드바 */}
+      <div
+        className={`h-full transition-all duration-300 ease-in-out ${
+          isMovieRecommendOpen ? "w-120 opacity-100" : "w-0 opacity-0"
+        }`}
+      >
+        {isMovieRecommendOpen && (
+          <MovieRecommend
+            onClose={() => setIsMovieRecommendOpen(false)}
+            chatroomId={chatId}
+          />
+        )}
       </div>
     </div>
   );

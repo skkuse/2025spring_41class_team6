@@ -17,7 +17,7 @@ const History = () => {
     <div className="px-60 py-12 w-full min-h-screen bg-gray-50 relative">
       <button
         className="flex items-center gap-2 px-6 py-2 border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition absolute top-8 right-16"
-        onClick={() => navigate("/")}
+        onClick={() => navigate("/chat")}
       >
         <ChatBubbleOutlineIcon className="w-5 h-5" />
         <span className="text-sm font-medium">대화</span>

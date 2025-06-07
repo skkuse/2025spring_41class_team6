@@ -62,6 +62,7 @@ class MovieInfoInternal(BaseModel):
   characters: List[CharacterInfoInternal] = []
   directors: List[PersonInfoInternal] = []
   rating: Optional[int] = None
+  bookmarked: Optional[bool] = None
   model_config = ConfigDict(from_attributes=True)
 
 class ChatRoomContext(BaseModel):
@@ -268,6 +269,7 @@ def db_get_bookmarked_movies(db: Session, user_id: int):
     last_update=movie.last_update,
     genres=db_get_genres_of_movie(db, movie.id),
     directors=db_get_directors_of_movie(db, movie.id),
+    bookmarked=True,
   ) for _, movie in db.execute(stmt).all()]
   
 
@@ -389,12 +391,14 @@ def db_update_archived(db: Session, user_id: int, movie_id: int, rating: int):
     return False
 
 
-def db_find_movie_by_id(db: Session, id: int, verbose: bool = True) -> MovieInfoInternal|None:
+def db_find_movie_by_id(db: Session, id: int, verbose: bool = True, user_id: int|None = None) -> MovieInfoInternal|None:
   stmt = sql.select(m.Movie).where(m.Movie.id == id)
   movie = db.execute(stmt).scalar_one_or_none()
   if movie is None:
     return None
   
+  bookmarked = False
+  rating = None
   genres = []
   directors = []
   characters = []
@@ -402,6 +406,20 @@ def db_find_movie_by_id(db: Session, id: int, verbose: bool = True) -> MovieInfo
     stmt_genre = sql.select(m.Genre).join(m.MovieGenre, m.Genre.id == m.MovieGenre.genre_id).where(m.MovieGenre.movie_id == id)
     stmt_director = sql.select(m.Director).join(m.MovieDirector, m.Director.id == m.MovieDirector.director_id).where(m.MovieDirector.movie_id == id)
     stmt_chara = sql.select(m.CharacterProfile, m.Actor).where(m.CharacterProfile.movie_id == id).outerjoin(m.Actor, m.CharacterProfile.actor_id == m.Actor.id)
+
+    if user_id:
+      stmt_bk = (
+        sql.select(m.BookmarkedMovie)
+        .where(m.BookmarkedMovie.user_id == user_id)
+        .where(m.BookmarkedMovie.movie_id == id)
+      )
+      bookmarked = True if db.execute(stmt_bk).scalar_one_or_none() is not None else False
+      stmt_ac = (
+        sql.select(m.ArchivedMovie.rating)
+        .where(m.ArchivedMovie.user_id == user_id)
+        .where(m.ArchivedMovie.movie_id == id)
+      )
+      rating = db.execute(stmt_ac).scalar_one_or_none()
 
     genres = [i.name for i in db.scalars(stmt_genre).all()]
     directors = [PersonInfoInternal(id = i.id, name = i.name, profile_image_path=i.profile_path) for i in db.scalars(stmt_director).all()]
@@ -425,7 +443,9 @@ def db_find_movie_by_id(db: Session, id: int, verbose: bool = True) -> MovieInfo
     last_update=movie.last_update,
     genres=genres,
     directors=directors,
-    characters=characters
+    characters=characters,
+    bookmarked=bookmarked,
+    rating=rating
   )
 
 def db_find_movie_by_tmdb_id(db: Session, tmdb_id: int):
@@ -679,3 +699,33 @@ def db_add_movie_reviews(db: Session, id: int, reviews: list[str]):
 # update_movie_by_tmdb_search(asdf, { "query": "아이언맨 3" })
 # print(find_movies_by_alias(asdf, "기생충"))
 # asdf.close()
+
+def db_add_recommended_movies(db: Session, chat_id: int, movie_ids: list[int]):
+  stmt = sql.insert(m.RecommendedMovie)
+  values = [{"chat_id": chat_id, "movie_id": i} for i in movie_ids]
+
+  db.execute(stmt, values)
+  try:
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
+def db_get_recommended_movies(db: Session, room_id: int):
+  q_chats = (
+    sql.select(m.ChatHistory.id).where(m.ChatHistory.room_id == room_id)
+    .order_by(m.ChatHistory.timestamp.asc())
+  )
+  
+  movies_list: list[list[MovieInfoInternal]]= []
+  for i in db.execute(q_chats).scalars().all():
+    stmt = (
+      sql.select(m.Movie).join(m.RecommendedMovie, m.RecommendedMovie.movie_id == m.Movie.id)
+      .where(m.RecommendedMovie.chat_id == i)
+    )
+    x = [MovieInfoInternal.model_validate(movie) for movie in db.execute(stmt).scalars().all()]
+    if x:
+      movies_list.append(x)
+  
+  return movies_list

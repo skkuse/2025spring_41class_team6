@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
 import Tabs from "@mui/material/Tabs";
@@ -8,17 +8,59 @@ import CloseIcon from "@mui/icons-material/Close";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
 import ThumbDownAltOutlinedIcon from "@mui/icons-material/ThumbDownAltOutlined";
-import { getMovie } from "@/apis/testApi";
+import useMovie from "@/hooks/movie/useMovie";
+import ActorCard from "@/components/movie/ActorCard";
+import { usePostBookmark, useDeleteBookmark } from "@/hooks/movie/useBookmark";
+import {
+  usePostArchive,
+  useDeleteArchive,
+  usePutArchive,
+} from "@/hooks/movie/useArchive";
+
 const MovieDetail = ({ open, onClose, id }) => {
   const [tabIndex, setTabIndex] = useState(0);
-  const [isBookmarked, setIsBookmarked] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [isDisliked, setIsDisliked] = useState(false);
+  // const [isBookmarked, setIsBookmarked] = useState(false);
 
+  const { mutate: postBookmark } = usePostBookmark();
+  const { mutate: deleteBookmark } = useDeleteBookmark();
+  const { mutate: postArchive } = usePostArchive();
+  const { mutate: putArchive } = usePutArchive();
+  const { mutate: deleteArchive } = useDeleteArchive();
+
+  const { data: movie, isLoading } = useMovie(id);
+  console.log(movie);
   if (!open) return null;
+  if (isLoading) return <div>Loading...</div>;
 
-  const data = getMovie(id);
-  const tabLabels = ["개요", "출연진", "나의 리뷰"];
+  const tabLabels = ["개요", "출연진"];
+
+  const handleBookmark = () => {
+    if (movie.bookmarked) {
+      deleteBookmark(id);
+    } else {
+      postBookmark(id);
+    }
+  };
+
+  const handleLike = () => {
+    if (movie.rating === 0) {
+      postArchive({ movieId: id, rating: 5 });
+    } else if (movie.rating === 1) {
+      putArchive({ movieId: id, rating: 5 });
+    } else if (movie.rating === 5) {
+      deleteArchive({ movieId: id });
+    }
+  };
+
+  const handleDislike = () => {
+    if (movie.rating === 0) {
+      postArchive({ movieId: id, rating: 1 });
+    } else if (movie.rating === 5) {
+      putArchive({ movieId: id, rating: 1 });
+    } else if (movie.rating === 1) {
+      deleteArchive({ movieId: id });
+    }
+  };
 
   return (
     <Modal
@@ -40,10 +82,10 @@ const MovieDetail = ({ open, onClose, id }) => {
         <div className="flex gap-8 mb-6">
           {/* 포스터 */}
           <div className="w-[300px] h-[450px] bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-            {data.imageUrl ? (
+            {movie.poster_img_url ? (
               <img
-                src={data.imageUrl}
-                alt={data.title}
+                src={movie.poster_img_url}
+                alt={movie.title}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -57,14 +99,14 @@ const MovieDetail = ({ open, onClose, id }) => {
           <div className="flex-1 flex flex-col">
             <div>
               <h2 id="movie-modal-title" className="text-2xl font-bold mb-2">
-                {data.title}
+                {movie.title}
               </h2>
               <div className="text-gray-500 text-sm mb-4">
-                <span>{data.year}</span> · <span>{data.director}</span> ·{" "}
-                <span>⭐ {data.rating}</span>
+                <span>{movie.release_date}</span> ·{" "}
+                <span>{movie.directors[0].name}</span> ·{" "}
               </div>
               <div className="flex flex-wrap gap-2 mb-4">
-                {data.genres.map((genre, idx) => (
+                {movie.genres.map((genre, idx) => (
                   <span
                     key={idx}
                     className="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-700"
@@ -74,16 +116,17 @@ const MovieDetail = ({ open, onClose, id }) => {
                 ))}
               </div>
               <p className="text-gray-700 text-base leading-relaxed">
-                {data.description}
+                {movie.overview}
               </p>
             </div>
 
             {/* 상호작용 버튼 */}
             <div className="flex gap-4 mt-auto pt-6">
+              {/* 북마크 */}
               <button
-                onClick={() => setIsBookmarked(!isBookmarked)}
+                onClick={handleBookmark}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  isBookmarked
+                  movie.bookmarked
                     ? "bg-blue-50 border-blue-200 text-blue-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}
@@ -91,13 +134,11 @@ const MovieDetail = ({ open, onClose, id }) => {
                 <BookmarkBorderIcon className="w-5 h-5" />
                 <span className="text-sm font-medium">북마크</span>
               </button>
+              {/* 좋아요 */}
               <button
-                onClick={() => {
-                  setIsLiked(!isLiked);
-                  if (isLiked) setIsDisliked(false);
-                }}
+                onClick={handleLike}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  isLiked
+                  movie.rating === 5
                     ? "bg-green-50 border-green-200 text-green-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}
@@ -105,13 +146,11 @@ const MovieDetail = ({ open, onClose, id }) => {
                 <ThumbUpAltOutlinedIcon className="w-5 h-5" />
                 <span className="text-sm font-medium">좋아요</span>
               </button>
+              {/* 싫어요 */}
               <button
-                onClick={() => {
-                  setIsDisliked(!isDisliked);
-                  if (isDisliked) setIsLiked(false);
-                }}
+                onClick={handleDislike}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${
-                  isDisliked
+                  movie.rating === 1
                     ? "bg-red-50 border-red-200 text-red-600"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 } transition`}
@@ -146,28 +185,31 @@ const MovieDetail = ({ open, onClose, id }) => {
             <div>
               <h4 className="font-semibold mb-1">줄거리</h4>
               <p className="text-gray-700 text-base leading-relaxed">
-                {data.overview}
+                {movie.overview}
               </p>
             </div>
           )}
           {tabIndex === 1 && (
             <div>
-              <h4 className="font-semibold mb-1">출연진</h4>
-              <ul className="list-disc pl-5 text-gray-700">
-                {data.cast.map((actor, idx) => (
-                  <li key={idx}>
-                    {actor.name} - {actor.role}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {tabIndex === 2 && (
-            <div>
-              <h4 className="font-semibold mb-1">나의 리뷰</h4>
-              <p className="text-gray-700 text-base leading-relaxed">
-                {data.myReview || "아직 리뷰가 없습니다."}
-              </p>
+              <h2 className="text-2xl font-bold mb-4">출연진</h2>
+              <div className="flex flex-wrap gap-4 justify-center">
+                {movie.characters.length === 0 ? (
+                  <div className="text-gray-500">출연진 정보가 없습니다.</div>
+                ) : (
+                  movie.characters.map((character, idx) => (
+                    <div
+                      key={idx}
+                      className="w-[200px] flex flex-col items-center bg-white rounded-lg shadow-md overflow-hidden"
+                    >
+                      <ActorCard
+                        character_name={character.name}
+                        actor_name={character.actor.name}
+                        image_url={character.actor.profile_image}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </Box>

@@ -76,10 +76,14 @@ async def create_chatroom(payload: CreateChatroomRequest,
         )
 
     # 초기 메시지가 있었다면 메시지를 AI에게 보내고 응답을 chats에 append하여 반환
-    response = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
+    result = await send_message_to_qachat(db, user.id, room.id, payload.initial_message)
+    response = result["message"]
+    recommended = result["recommendation"]
     result = db_append_chat_message(db, room.id, payload.initial_message, response, get_summary_from_qachat(room.id))
     if result is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
+    else:
+        db_add_recommended_movies(db, result.id, recommended)
     
     chats.append(ChatHistory(
         user_message=result.user_chat,
@@ -101,6 +105,14 @@ async def delete_chatroom(payload: ChatroomIDRequest,
         return DeleteChatroomResponse(id=payload.id)
     else:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="db removal failed")
+
+# ---------------------------
+# /chatrooms/{room_id}/recommended
+# ---------------------------
+@app.get("/api/chatrooms/{room_id}/recommended", response_model=List[List[Movie]])
+async def get_recommended(room_id: int, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
+    list_of_movies = db_get_recommended_movies(db, room_id)
+    return [[public_movie_info(movie) for movie in movies] for movies in list_of_movies]
 
 # ---------------------------
 # /chatrooms/{room_id}/messages
@@ -127,7 +139,8 @@ async def post_message(room_id: int,
                        db: Session = Depends(get_db)):
     
     if not stream:
-        response = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        result = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        response = result["messages"]
         result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
         if result is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
@@ -140,19 +153,26 @@ async def post_message(room_id: int,
     else:
         async def event_generator():
             full_answer = ""
+            recommended = []
             async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
-                full_answer += chunk
-                yield f"data: {json.dumps({'type' : 'message', 'content': chunk})}\n\n"
+                t = chunk.get("type")
+                v = chunk.get("content")
+                if t == "message":
+                    full_answer += cast(str, v)
+                elif t == "recommendation":
+                    recommended = cast(list[int], v)
+
+                yield f"data: {json.dumps(chunk)}\n\n"
 
                 # 버퍼링 방지
                 await asyncio.sleep(0)
+
             result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
             if result is None:
                 print("something went wrong...")
+            else:
+              db_add_recommended_movies(db, result.id, recommended)
 
-            yield f"data: {json.dumps({'type' : 'recommendation', 'content': '매트릭스'})}\n\n"
-
-        
         return StreamingResponse(
             event_generator(),
         )
@@ -171,7 +191,7 @@ async def get_bookmarked(user: UserInfoInternal = Depends(find_user_by_id), db: 
 async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_add_bookmark(db, user.id, payload.id):
         return public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, True) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.id, True, user.id) )
         )
     else:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="bad request")
@@ -179,7 +199,7 @@ async def post_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depend
 
 @app.delete("/api/movies/bookmarked", response_model=Movie)
 async def delete_bookmark(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, payload.id, True)
+    movie = db_find_movie_by_id(db, payload.id, True, user.id)
 
     if movie and db_rm_bookmark(db, user.id, payload.id):
         return public_movie_info(movie)
@@ -199,7 +219,7 @@ async def get_archive(user: UserInfoInternal = Depends(find_user_by_id), db: Ses
 async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_add_archived(db, user.id, payload.movie_id, payload.rating):
         ret = public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True, user.id) )
         )
         ret.rating = min(5, max(0, payload.rating))
         return ret
@@ -211,7 +231,7 @@ async def post_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends
 async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
     if db_update_archived(db, user.id, payload.movie_id, payload.rating):
         ret = public_movie_info(
-            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True) )
+            cast( MovieInfoInternal, db_find_movie_by_id(db, payload.movie_id, True, user.id) )
         )
         ret.rating = min(5, max(0, payload.rating))
         return ret
@@ -221,7 +241,7 @@ async def update_archive(payload: ArchiveRequest, user: UserInfoInternal = Depen
 
 @app.delete("/api/movies/archive", response_model=Movie)
 async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depends(find_user_by_id), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, payload.id, True)
+    movie = db_find_movie_by_id(db, payload.id, True, user.id)
     if movie and db_rm_archived(db, user.id, payload.id):
         return public_movie_info(movie)
     else:
@@ -232,8 +252,9 @@ async def delete_archive(payload: MovieIDRequest, user: UserInfoInternal = Depen
 # /movies/{id}
 # ---------------------------
 @app.get("/api/movies/{id}", response_model=Movie)
-async def get_movie(id: int = Path(...), verbose: bool = Query(True), db: Session = Depends(get_db)):
-    movie = db_find_movie_by_id(db, id, verbose)
+async def get_movie(request: Request, id: int = Path(...), verbose: bool = Query(True), db: Session = Depends(get_db)):
+    user_id = auth.check_user_id(request)
+    movie = db_find_movie_by_id(db, id, verbose, user_id)
     if movie is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="영화가 없습니다.")
 
@@ -251,6 +272,7 @@ def public_movie_info(internal: MovieInfoInternal) -> Movie:
         release_date=str(movie.release_date)                     if movie.release_date else "[방영일 정보 없음]",
         poster_img_url=tmdb_full_image_path(movie.poster_img_url, ImgType.POSTER, None)  if movie.poster_img_url  else "",
         trailer_img_url=tmdb_full_image_path(movie.trailer_img_url, ImgType.STILL, None) if movie.trailer_img_url else "",
+        bookmarked=movie.bookmarked                                                      if movie.bookmarked is not None else False,
         rating = movie.rating                                                            if movie.rating else 0,
         ordering = 0,
         genres = movie.genres,
