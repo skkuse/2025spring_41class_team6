@@ -3,13 +3,18 @@ import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import SendIcon from "@mui/icons-material/Send";
 import useMessagesList from "@/hooks/chat/useMessagesList";
 import CircularProgress from "@mui/material/CircularProgress";
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import fetchChatSSE from "@/apis/chat/fetchchatSSE";
+import { useRef, useEffect, useCallback, useMemo, memo } from "react";
 import MarkdownChat from "@/components/chat/MarkdownChat";
 import SendChat from "@/components/chat/SendChat";
 import MovieRecommend from "@/components/layout/MovieRecommend";
 import MenuOpenIcon from "@mui/icons-material/MenuOpen";
+import ServerMessage from "@/components/chat/ServerMessage";
+import useChatroomStore from "@/stores/useChatroomStore";
+import {
+  useChatMessageSend,
+  useTypingAnimation,
+  useAutoScroll,
+} from "@/hooks/chat/useChatroom";
 
 // 메모이제이션된 메시지 컴포넌트
 const MemoizedMessage = memo(({ msg }) => (
@@ -36,149 +41,51 @@ const MemoizedMessage = memo(({ msg }) => (
 ));
 
 const ChatRoom = () => {
-  //////////////////// 로컬 상태 ////////////////////
-  const [message, setMessage] = useState("");
-  const [sendMessage, setSendMessage] = useState("");
-  const [displayedMessage, setDisplayedMessage] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const queryClient = useQueryClient();
-  const tokenQueue = useRef([]);
-  const animationFrameId = useRef(null);
-  const lastScrollTime = useRef(0);
-  const [isMovieRecommendOpen, setIsMovieRecommendOpen] = useState(false);
+  // Zustand store
+  const {
+    writeMessage,
+    sendMessage,
+    streamingMessage,
+    isStreaming,
+    serverStatus,
+    isMovieRecommendOpen,
+    setWriteMessage,
+    setIsMovieRecommendOpen,
+    resetChatroom,
+    clearTokenQueue,
+  } = useChatroomStore();
 
-  const messagesEndRef = useRef(null);
-  const containerRef = useRef(null);
+  // 라우팅
   const navigate = useNavigate();
   const { chatId } = useParams();
 
-  //////////////////// 서버 상태 fetch ////////////////////
+  // 컴포넌트 레퍼런스
+  const containerRef = useRef(null);
+
+  // 서버 상태 fetch
   const { data: messages, isLoading } = useMessagesList(chatId);
 
-  const getRandomTypingDelay = useCallback(() => {
-    const randomVariation = Math.random();
-    if (randomVariation < 0.4) return 20;
-    else if (randomVariation < 0.85) return 70;
-    else return 150;
-  }, []);
+  // 커스텀 훅
+  const sendChatMessage = useChatMessageSend(chatId);
+  useTypingAnimation();
 
-  // 스크롤 함수
-  const scrollToBottom = useCallback(() => {
-    const now = Date.now();
-    if (now - lastScrollTime.current < 100) return;
+  // 자동 스크롤 - 의존성 배열에 필요한 값들 추가
+  const { messagesEndRef } = useAutoScroll([
+    messages?.length,
+    sendMessage,
+    streamingMessage && isStreaming,
+  ]);
 
-    lastScrollTime.current = now;
-    if (animationFrameId.current) {
-      cancelAnimationFrame(animationFrameId.current);
-    }
-
-    animationFrameId.current = requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    });
-  }, []);
-
-  // chatId 변경 상태 변경
+  // chatId 변경 시 상태 초기화
   useEffect(() => {
-    setIsMovieRecommendOpen(false);
-  }, [chatId]);
+    resetChatroom();
+  }, [chatId, resetChatroom]);
 
-  // 타이핑 애니메이션
-  useEffect(() => {
-    if (!isStreaming) return;
+  // 메시지 전송 핸들러
+  const handleSendMessage = useCallback(() => {
+    sendChatMessage();
+  }, [sendChatMessage]);
 
-    let animationId;
-    let lastTime = 0;
-
-    const animate = (currentTime) => {
-      if (currentTime - lastTime >= getRandomTypingDelay()) {
-        if (tokenQueue.current.length > 0) {
-          const tokensToAdd = tokenQueue.current.splice(
-            0,
-            Math.min(3, tokenQueue.current.length)
-          );
-          setDisplayedMessage((prev) => prev + tokensToAdd.join(""));
-        }
-        lastTime = currentTime;
-      }
-
-      if (isStreaming || tokenQueue.current.length > 0) {
-        animationId = requestAnimationFrame(animate);
-      }
-    };
-
-    animationId = requestAnimationFrame(animate);
-
-    return () => {
-      if (animationId) cancelAnimationFrame(animationId);
-    };
-  }, [isStreaming, getRandomTypingDelay]);
-
-  // 스크롤 이벤트
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages?.length, scrollToBottom]);
-  // 임시 메시지 전송 시 스크롤
-  useEffect(() => {
-    if (sendMessage) {
-      scrollToBottom();
-    }
-  }, [sendMessage, scrollToBottom]);
-
-  // 스트리밍 중일 때만 스크롤
-  useEffect(() => {
-    if (isStreaming && displayedMessage) {
-      scrollToBottom();
-    }
-  }, [displayedMessage, isStreaming, scrollToBottom]);
-
-  // 메시지 전송
-  const messageRef = useRef(message);
-  messageRef.current = message;
-
-  const handleSendMessage = useCallback(async () => {
-    const currentMessage = messageRef.current;
-    if (currentMessage.trim() && !isStreaming) {
-      setSendMessage(currentMessage);
-      setDisplayedMessage("");
-      setIsStreaming(true);
-      setMessage("");
-      tokenQueue.current = [];
-
-      try {
-        await fetchChatSSE(
-          chatId,
-          currentMessage,
-          async (token) => {
-            tokenQueue.current.push(token);
-          },
-          async () => {
-            setSendMessage("");
-            setDisplayedMessage("");
-            setIsStreaming(false);
-            // 배치 업데이트로 리렌더링 최소화
-            queryClient.invalidateQueries(["messagesList", chatId]);
-            queryClient.invalidateQueries(["recommend", chatId]);
-          },
-          (err) => {
-            setIsStreaming(false);
-            setSendMessage("");
-            setDisplayedMessage("");
-            alert("에러! " + err.message);
-          },
-          (open) => {
-            setIsMovieRecommendOpen(open);
-          }
-        );
-      } catch (error) {
-        console.error("Failed to send message:", error);
-        setIsStreaming(false);
-        setSendMessage("");
-        setDisplayedMessage("");
-      }
-    }
-  }, [isStreaming, chatId, queryClient]); // message 의존성 제거
-
-  // handleKeyPress를 독립적으로 만들어 재생성 방지
   const handleKeyPress = useCallback(
     (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -204,17 +111,14 @@ const ChatRoom = () => {
   // Cleanup
   useEffect(() => {
     return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
-      tokenQueue.current = [];
+      clearTokenQueue();
     };
-  }, []);
+  }, [clearTokenQueue]);
 
   return (
     <div className="flex flex-1 bg-white h-full w-full">
       {/* 메인 채팅 영역 */}
-      <div className=" flex flex-col w-full">
+      <div className="flex flex-col w-full">
         {/* 북마크 버튼 */}
         <div className="flex justify-end p-6">
           <button
@@ -248,10 +152,13 @@ const ChatRoom = () => {
               {/* 임시 메시지: 내가 막 보낸 것 */}
               {sendMessage && <SendChat message={sendMessage} />}
 
+              {/* 서버 프로세싱 안내 메시지 */}
+              <ServerMessage status={serverStatus} />
+
               {/* 스트리밍 중인 메시지 */}
-              {displayedMessage && (
+              {streamingMessage && (
                 <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
-                  <MarkdownChat>{displayedMessage}</MarkdownChat>
+                  <MarkdownChat>{streamingMessage}</MarkdownChat>
                 </div>
               )}
 
@@ -265,8 +172,8 @@ const ChatRoom = () => {
           <div className="w-[600px] flex items-center">
             <input
               type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              value={writeMessage}
+              onChange={(e) => setWriteMessage(e.target.value)}
               onKeyDown={handleKeyPress}
               className="flex-1 border border-[#ececec] rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
               placeholder="메시지를 입력하세요..."
