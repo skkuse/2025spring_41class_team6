@@ -109,10 +109,10 @@ const MovieDetail = ({ open, onClose, id }) => {
           {/* 정보 */}
           <div className="flex-1 flex flex-col">
             <div>
-              <h2 id="movie-modal-title" className="text-2xl font-bold mb-2">
+              <h2 id="movie-modal-title" className="text-3xl font-bold mb-4">
                 {movie.title}
               </h2>
-              <div className="text-gray-500 text-sm mb-4">
+              <div className="text-gray-500 text-sm mb-8">
                 <span>{movie.release_date}</span> ·{" "}
                 <span>{movie.directors[0]?.name}</span> ·{" "}
               </div>
@@ -126,9 +126,6 @@ const MovieDetail = ({ open, onClose, id }) => {
                   </span>
                 ))}
               </div>
-              <p className="text-gray-700 text-base leading-relaxed">
-                {movie.overview}
-              </p>
             </div>
 
             {/* 상호작용 버튼 */}
