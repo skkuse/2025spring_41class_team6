@@ -79,8 +79,8 @@ class MovieReview(Base):
 
 class RecommendedMovie(Base):
     __tablename__ = TABLE_RECOMMENDED_MOVIE
-    chat_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_CHAT_HISTORY), ondelete="CASCADE"), primary_key=True)
-    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True)
+    chat_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_CHAT_HISTORY), ondelete="CASCADE"), primary_key=True, nullable=False)
+    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True, nullable=False)
 
 @event.listens_for(Movie, "before_update", propagate=True)
 def auto_update_last_modified(mapper, connection, target: Movie):

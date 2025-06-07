@@ -3,7 +3,7 @@ import llm.crawler as crawler
 from database.utils import *
 import json
 from langchain.schema import messages_to_dict, messages_from_dict
-from typing import TypedDict
+from typing import AsyncGenerator, TypedDict
 
 from database.chroma import *
 from datetime import datetime, timezone
@@ -34,12 +34,12 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
     full_answer = ""
     movie_ids = []
     
-    async for content in stream_send_message_to_qachat(db, user_id, room_id, message):
-        v = content.get("content")
-        t = content.get("type")
-        if t == "message":
+    async for chunk in stream_send_message_to_qachat(db, user_id, room_id, message):
+        t = sse_type(chunk)
+        v = sse_content(chunk)
+        if t == SSE_MESSAGE:
             full_answer += v if v else ""
-        elif t == "recommendation":
+        elif t == SSE_RECOMMEND:
             movie_ids = v
 
     return { "message": full_answer, "recommendation": movie_ids }
@@ -135,7 +135,7 @@ def fuzzy_search(db: Session, title: str, keyword: str|None):
     return movie
 
 
-def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
+async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> AsyncGenerator[dict[str, Any], Any]:
     """
     message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
     """
@@ -153,11 +153,15 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
             keyword = hint.get("keyword")
             assert(title)
 
-
             if qachat.is_cached_on_chroma(title, session_id):
                 continue
 
-            movie = fuzzy_search(db, title, keyword)
+            movie, meta = fuzzy_fast(db, title, keyword)
+            if not movie:
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
+                movie = fuzzy_slow(db, title, keyword, meta)
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
+
             if movie is None:
                 continue
             
@@ -165,17 +169,21 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
             
             # 4. See if we have any outdated, or missing data in our DB
             if not movie.wiki_document:
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
                 movie.wiki_document = crawler.get_wikipedia_content(title)
                 if movie.wiki_document:
                     db_update_wikipedia_data(db, movie.id, movie.wiki_document)
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
 
             # 5. 영화 리뷰를 불러옵니다. 3번째 인자를 None이 아닌 것으로 설정하면 그 수만큼만 리뷰를 불러옵니다
             reviews = None # 영화가 여러 개 일 때 첫번째 영화의 리뷰만 불러오는 오류 해결
             reviews = db_get_movie_reviews(db, movie.id, None)
             if reviews != None:
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
                 print(f"{title}에 대한 리뷰가 DB에 없습니다. 리뷰를 크롤링 합니다...")
                 reviews = cast(list[str], crawler.get_watcha_reviews(title))
                 db_add_movie_reviews(db, movie.id, reviews)
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
 
             # 6. Let's cache it
             qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews, session_id)
@@ -201,36 +209,34 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
     bookmarks = db_get_bookmarked_movies(db, user_id)
     archives = db_get_archived_movies(db, user_id)
     
-    async def generator():
-        response = ""
-        
-        yield make_sse(SSE_SIGNAL, SSE_MESSAGE_START)
-        async for chunk in qachat.get_streamed_messages(session_id, titles, message, bookmarks, archives):
-            response += chunk
-            yield make_sse(SSE_MESSAGE, chunk)
-        yield make_sse(SSE_SIGNAL, SSE_MESSAGE_END)
-        
-        hints = qachat.extract_suggested_titles_and_metadata_with_llm(response)
-        if hints and hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
-            pass
-        elif hints:
-            ids: list[int]= []
-            for hint in hints:
-                title = hint.get("title")
-                keyword = hint.get("keyword")
-                assert(title)
-                
-                yield make_sse(SSE_SIGNAL, SSE_DB_START)
-                movie, meta = fuzzy_fast(db, title, keyword)
-                yield make_sse(SSE_SIGNAL, SSE_DB_END)
-                if not movie:
-                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
-                    movie = fuzzy_slow(db, title, keyword, meta)
-                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
-
-                if movie is not None:
-                    ids.append(movie.id)
-
-            yield { "type": "recommendation", "content": ids }
+    # AI 응답 생성
+    yield make_sse(SSE_SIGNAL, SSE_MESSAGE_START)
+    response = ""
+    async for chunk in qachat.get_streamed_messages(session_id, titles, message, bookmarks, archives):
+        response += chunk
+        yield make_sse(SSE_MESSAGE, chunk)
+    yield make_sse(SSE_SIGNAL, SSE_MESSAGE_END)
     
-    return generator()
+    # 추천 영화 추출
+    hints = qachat.extract_suggested_titles_and_metadata_with_llm(response)
+    if hints and hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
+        pass
+    elif hints:
+        ids: list[int]= []
+        for hint in hints:
+            title = hint.get("title")
+            keyword = hint.get("keyword")
+            assert(title)
+            
+            yield make_sse(SSE_SIGNAL, SSE_DB_START)
+            movie, meta = fuzzy_fast(db, title, keyword)
+            yield make_sse(SSE_SIGNAL, SSE_DB_END)
+            if not movie:
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
+                movie = fuzzy_slow(db, title, keyword, meta)
+                yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
+
+            if movie is not None:
+                ids.append(movie.id)
+
+        yield make_sse(SSE_RECOMMEND, ids)
