@@ -7,7 +7,7 @@ from typing import TypedDict
 
 from database.chroma import *
 from datetime import datetime, timezone
-
+from sse import *
 
 class SummaryType(TypedDict):
     """
@@ -43,6 +43,54 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
             movie_ids = v
 
     return { "message": full_answer, "recommendation": movie_ids }
+
+def fuzzy_fast(db: Session, title: str, keyword: str|None):
+    meta = chroma_fuzzy_search(title, [keyword] if keyword else None)
+    if meta:
+        movie = db_find_movie_by_id(db, meta.sqlite_id, True)
+        return movie, meta
+    return None, None
+
+def fuzzy_slow(db: Session, title: str, keyword: str|None, meta: MovieMeta|None):
+    movie = None
+    if meta:
+        if meta.tmdb_id is not None:
+            movie = update_movie_by_tmdb_id(db, meta.tmdb_id)
+        else:
+            movies = update_movie_by_tmdb_search(db, search={
+                "query": meta.title,
+                "primary_release_year": meta.release_date or "",
+            })
+            if len(movies) > 0:
+                movie = movies[0]
+
+        if movie:
+            chroma_delete(meta)
+            meta.sqlite_id = movie.id
+            meta.tmdb_id = movie.tmdb_id
+            meta.genres = meta.genres
+            meta.created_at = datetime.now(timezone.utc).isoformat()
+            meta.title = movie.title
+            if movie.release_date:
+                meta.release_date = movie.release_date.isoformat()
+            chroma_insert(meta)
+        else:
+            chroma_delete(meta)
+            return
+        
+    else:
+        movies = update_movie_by_tmdb_search(db, search={
+            "query": title,
+            "primary_release_year": keyword or ""
+        })
+        if len(movies) == 0:
+            return
+
+        movie = movies[0]
+
+    return movie
+
+
 
 def fuzzy_search(db: Session, title: str, keyword: str|None):
     print(f"[FUZZY]\nTITLE: {title}\nKEYWORD: {keyword}\n에 대한 로컬 DB 검색 중...")
@@ -155,22 +203,34 @@ def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, messa
     
     async def generator():
         response = ""
+        
+        yield make_sse(SSE_SIGNAL, SSE_MESSAGE_START)
         async for chunk in qachat.get_streamed_messages(session_id, titles, message, bookmarks, archives):
             response += chunk
-            yield { "type": "message", "content": chunk }
-        yield { "type": "signal", "content": "chat done" }
+            yield make_sse(SSE_MESSAGE, chunk)
+        yield make_sse(SSE_SIGNAL, SSE_MESSAGE_END)
         
-        ids: list[int]= []
         hints = qachat.extract_suggested_titles_and_metadata_with_llm(response)
-        for hint in hints:
-            title = hint.get("title")
-            keyword = hint.get("keyword")
-            assert(title)
-            
-            movie = fuzzy_search(db, title, keyword)
-            if movie is not None:
-                ids.append(movie.id)
+        if hints and hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
+            pass
+        elif hints:
+            ids: list[int]= []
+            for hint in hints:
+                title = hint.get("title")
+                keyword = hint.get("keyword")
+                assert(title)
+                
+                yield make_sse(SSE_SIGNAL, SSE_DB_START)
+                movie, meta = fuzzy_fast(db, title, keyword)
+                yield make_sse(SSE_SIGNAL, SSE_DB_END)
+                if not movie:
+                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
+                    movie = fuzzy_slow(db, title, keyword, meta)
+                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
 
-        yield { "type": "recommendation", "content": ids }
+                if movie is not None:
+                    ids.append(movie.id)
+
+            yield { "type": "recommendation", "content": ids }
     
     return generator()
