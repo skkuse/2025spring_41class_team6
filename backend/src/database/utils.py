@@ -43,10 +43,12 @@ class PersonInfoInternal(BaseModel):
 
 class CharacterInfoInternal(BaseModel):
   id: int
+  movie_id: int
   name: str
-  tone: str
-  description: str
+  tone: Optional[str] = None
+  description: Optional[str] = None
   actor: Optional[PersonInfoInternal] = None
+  model_config = ConfigDict(from_attributes=True)
 
 class MovieInfoInternal(BaseModel):
   id: int
@@ -132,6 +134,11 @@ def db_find_user_with_password(db: Session, email: str, password: str) -> UserIn
     return None
   return res
 
+def db_get_chatroom(db: Session, room_id: int) -> ChatRoomInfoInternal:
+  stmt = sql.select(m.ChatRoom).where(m.ChatRoom.id == room_id)
+  res = db.execute(stmt).scalar_one()
+  return ChatRoomInfoInternal.model_validate(res)
+
 def db_make_new_chatroom(db: Session, user_id: int) -> ChatRoomInfoInternal | None:
   doc = m.ChatRoom(
     user_id=user_id,
@@ -216,6 +223,20 @@ def db_update_chatroom_name(db: Session, room_id: int, name: str) -> bool:
   stmt = sql.update(m.ChatRoom).where(m.ChatRoom.id == room_id).values(title=name)
   try:
     db.execute(stmt)
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False
+
+def db_change_chatroom_immersive(db: Session, room_id: int, character_id: int, title: str):
+  stmt = (
+    sql.update(m.ChatRoom).where(m.ChatRoom.id == room_id)
+    .values(title=title, character_id=character_id)
+  )
+  try:
+    db.execute(stmt)
+    db.commit()
     return True
   except:
     db.rollback()
@@ -477,6 +498,7 @@ def db_find_movie_by_id(db: Session, id: int, verbose: bool = True, user_id: int
     directors = [PersonInfoInternal(id = i.id, name = i.name, profile_image_path=i.profile_path) for i in db.scalars(stmt_director).all()]
     characters = [CharacterInfoInternal(
       id = character.id,
+      movie_id = character.movie_id,
       name = character.name,
       tone = character.tone or "",
       description = character.description or "",
@@ -812,3 +834,32 @@ def db_get_recommended_movies(db: Session, room_id: int):
       movies_list.append(x)
   
   return movies_list
+
+class CharacterProfileInternal(BaseModel):
+  id             : int
+  movie_id       : int
+  name           : str
+  description    : Optional[str]
+  tone           : Optional[str]
+  other_features : Optional[str]
+  model_config = ConfigDict(from_attributes=True)
+
+def db_get_character_profile_by_id(db: Session, character_id: int) -> CharacterInfoInternal|None:
+  stmt = sql.select(m.CharacterProfile).where(m.CharacterProfile.id == character_id)
+  x = db.execute(stmt).scalar_one_or_none()
+  return CharacterInfoInternal.model_validate(x) if x else None
+
+def db_update_character_description(db: Session, character_id: int, personality: str):
+  stmt = (
+    sql.update(m.CharacterProfile)
+    .where(m.CharacterProfile.id == character_id)
+    .values(description = personality)
+  )
+
+  try:
+    db.execute(stmt)
+    db.commit()
+    return True
+  except:
+    db.rollback()
+    return False

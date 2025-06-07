@@ -39,7 +39,7 @@ class ChatHistory(BaseModel):
     timestamp: datetime
 
 class CreateChatroomRequest(BaseModel):
-    initial_message: Optional[str] = ""
+    character_id: Optional[int] = None
 
 class CreateChatroomResponse(BaseModel):
     id: int

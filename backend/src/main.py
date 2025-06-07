@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from datetime import datetime
 from api_schema import *
 from sse import *
-from llm_layer import get_summary_from_qachat, send_message_to_qachat, stream_send_message_to_qachat
+from llm_layer import get_summary_from_qachat, send_message_to_qachat, stream_send_message_to_qachat, stream_create_character, stream_character_chat
 from database.utils import *
 from common.env import *
 import auth
@@ -63,19 +63,54 @@ async def get_chatrooms(user: UserInfoInternal = Depends(find_user_by_id), db: S
 
 
 @app.post("/api/chatrooms", response_model=CreateChatroomResponse)
-async def create_chatroom(user: UserInfoInternal = Depends(find_user_by_id),
+async def create_chatroom(payload: CreateChatroomRequest,
+                          user: UserInfoInternal = Depends(find_user_by_id),
                           db: Session = Depends(get_db)):
     room = db_make_new_chatroom(db, user.id)
     if room is None:
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to create chatroom")
 
-    chats = []
-    return CreateChatroomResponse(
-        id = room.id,
-        title = room.title,
-        chats = chats
-    )
+    if not payload.character_id:
+        # client wants to talk to plain AI
+        chats = []
+        return CreateChatroomResponse(
+            id = room.id,
+            title = room.title,
+            chats = chats
+        )
+    else:
+        # we create/prepare character for this chat room
+        character_id = payload.character_id
+        profile = db_get_character_profile_by_id(db, character_id)
+        if profile is None:
+            # client did something dumb
+            db_delete_user_chatroom(db, room.id, user.id)
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "character not found")
 
+        # now we're sure that room and character exists
+        title = f"{profile.name} 님과 대화"
+        db_change_chatroom_immersive(db, room.id, character_id, title)
+
+        # since creating character takes looong time, we use SSE here
+        async def event_generator():
+            ccr = CreateChatroomResponse(id = room.id, title = title, chats = [])
+            yield sse_to_string(make_sse(SSE_CHATROOM, ccr.model_dump()))
+
+            async for chunk in stream_create_character(db, room.id, character_id):
+                yield sse_to_string(chunk)
+                await asyncio.sleep(0) # 버퍼링 방지
+
+                if sse_type(chunk) == SSE_SIGNAL and sse_content(chunk) == SSE_CC_FAIL:
+                    # something oof happened
+                    db_delete_user_chatroom(db, room.id, user.id)
+                    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "failed to create character")
+
+            # finish our SSE message
+            yield sse_to_string(make_sse(SSE_SIGNAL, SSE_FINISH))
+
+        return StreamingResponse(
+            event_generator(),
+        )
 
 @app.delete("/api/chatrooms", response_model=DeleteChatroomResponse)
 async def delete_chatroom(payload: ChatroomIDRequest,
@@ -118,10 +153,11 @@ async def post_message(room_id: int,
                        user: UserInfoInternal= Depends(find_user_by_id),
                        db: Session = Depends(get_db)):
     
+    room = db_get_chatroom(db, room_id)
     if not stream:
         result = await send_message_to_qachat(db, user.id, room_id, payload.content)
         response = result["message"]
-        result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room_id))
+        result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room))
         if result is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
 
@@ -152,7 +188,7 @@ async def post_message(room_id: int,
                 if db_update_chatroom_name(db, room_id, new_title):
                     yield f"data: {json.dumps(make_sse(SSE_ROOM_TITLE, new_title))}\n\n"
 
-            result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room_id))
+            result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room))
 
             if result is None:
                 print("something went wrong...")

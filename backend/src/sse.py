@@ -6,6 +6,10 @@ SSE_MESSAGE = "message"
 SSE_TYPE = "type"
 SSE_CONTENT = "content"
 
+SSE_CHATROOM = "created chatroom"
+SSE_CC_START = "cc create start"
+SSE_CC_DONE = "cc create done"
+SSE_CC_FAIL = "cc create fail"
 SSE_CRAWL_START= "crawling start"
 SSE_CRAWL_END = "crawling end"
 SSE_MESSAGE_START = "message start"
@@ -27,3 +31,7 @@ def sse_type(data: dict) -> str:
 
 def sse_content(data: dict):
   return data[SSE_CONTENT]
+
+def sse_to_string(json_object):
+  import json
+  return f"data: {json.dumps(json_object)}\n\n"

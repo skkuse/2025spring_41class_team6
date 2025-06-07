@@ -16,8 +16,20 @@ class SummaryType(TypedDict):
     summary: str
     messages: list[dict]
 
-def get_summary_from_qachat(room_id: int) -> SummaryType:
-    memory = qachat.get_memory(str(room_id))
+def is_room_immersive(room: ChatRoomInfoInternal) -> bool:
+  return bool(room.character_id)
+
+
+def get_summary_from_qachat(room: ChatRoomInfoInternal) -> SummaryType:
+    import llm.characterchat as cc
+    
+    session_id = str(room.id)
+    
+    if is_room_immersive(room):
+        memory = cc.get_memory(session_id)
+    else:
+        memory = qachat.get_memory(session_id)
+
     summary = memory.moving_summary_buffer
     messages = memory.chat_memory.messages
     messages_dict = messages_to_dict(messages)
@@ -90,54 +102,100 @@ def fuzzy_slow(db: Session, title: str, keyword: str|None, meta: MovieMeta|None)
 
     return movie
 
+async def stream_create_character(db: Session, room_id: int, character_id: int):
+    """
+    character_id, room_id가 반드시 존재해야 합니다.
+    """
+    import llm.characterchat as cc
 
-def fuzzy_search(db: Session, title: str, keyword: str|None):
-    print(f"[FUZZY]\nTITLE: {title}\nKEYWORD: {keyword}\n에 대한 로컬 DB 검색 중...")
-    meta = chroma_fuzzy_search(title, [keyword] if keyword else None)
-    if meta:
-        movie = db_find_movie_by_id(db, meta.sqlite_id, True)
-        if not movie:
-            if meta.tmdb_id is not None:
-                movie = update_movie_by_tmdb_id(db, meta.tmdb_id)
-            else:
-                movies = update_movie_by_tmdb_search(db, search={
-                    "query": meta.title,
-                    "primary_release_year": meta.release_date or "",
-                })
-                if len(movies) > 0:
-                    movie = movies[0]
+    session_id = str(room_id)
 
-            if movie:
-                chroma_delete(meta)
-                meta.sqlite_id = movie.id
-                meta.tmdb_id = movie.tmdb_id
-                meta.genres = meta.genres
-                meta.created_at = datetime.now(timezone.utc).isoformat()
-                meta.title = movie.title
-                if movie.release_date:
-                    meta.release_date = movie.release_date.isoformat()
-                chroma_insert(meta)
-            else:
-                chroma_delete(meta)
-                return
-    else:
-        movies = update_movie_by_tmdb_search(db, search={
-            "query": title,
-            "primary_release_year": keyword or ""
-        })
-        if len(movies) == 0:
-            return
-
-        movie = movies[0]
+    profile = cast(
+        CharacterInfoInternal,
+        db_get_character_profile_by_id(db, character_id)
+    )
     
-    print(f"[FUZZY] 검색 성공")
-    return movie
+    if profile.description:
+        yield make_sse(SSE_SIGNAL, SSE_CC_DONE)
+        return
+    
+    movie = db_find_movie_by_id(db, profile.movie_id, False)
+    if movie is None:
+        yield make_sse(SSE_SIGNAL, SSE_CC_FAIL)
+        return
+
+    title = movie.title
+    character = profile.name
+
+    if not cc.is_cached_on_chroma(title, session_id):
+        if not movie.wiki_document:
+            yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
+            movie.wiki_document = crawler.get_wikipedia_content(title) or crawler.get_wikipedia_content(title + " (영화)")
+            if movie.wiki_document:
+                db_update_wikipedia_data(db, movie.id, movie.wiki_document)
+            yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
+
+        cc.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, session_id)
+    
+    yield make_sse(SSE_SIGNAL, SSE_CC_START)
+    personality = cc.create_personality(title, character, session_id)
+    cc.set_character_prompts(session_id, personality)
+    if not db_update_character_description(db, character_id, personality):
+        yield make_sse(SSE_SIGNAL, SSE_CC_FAIL)
+    else:
+        yield make_sse(SSE_SIGNAL, SSE_CC_DONE)
+
+
+async def stream_character_chat(db: Session, room_id: int, message: str, character_id: int) -> AsyncGenerator[dict[str, Any], Any]:
+    import llm.characterchat as cc
+    """
+    캐릭터 채팅 모드 스트리밍
+    """
+    session_id = str(room_id)
+    
+    # 캐릭터 프로필 로드
+    character_profile = db_get_character_profile_by_id(db, character_id)  # 이 함수가 DB utils에 있다고 가정
+    if not character_profile or not character_profile.description:
+        yield make_sse(SSE_MESSAGE, "캐릭터 정보를 찾을 수 없습니다.")
+        return
+    
+    # 세션에 캐릭터 프롬프트 설정
+    cc.set_character_prompts(session_id, character_profile.description)
+    
+    # 메모리 로드 (기존 대화 기록)
+    if not cc.is_memory_on_cache(session_id):
+        print(f"[cc] session cache가 비어있습니다")
+        context = db_get_chatroom_context(db, room_id).summary
+        if context:
+            print(f"[cc] session 정보를 DB에서 불러옵니다")
+            print(f"context: {context}")
+            context = cast(SummaryType, json.loads(context))
+            summary = context["summary"]
+            messages = messages_from_dict(context["messages"])
+            cc.load_memory(session_id, summary, messages)
+        else:
+            print("session 정보가 없습니다. 새로운 context를 생성합니다.")
+    
+    # 응답 생성
+    yield make_sse(SSE_SIGNAL, SSE_MESSAGE_START)
+    response = ""
+    async for chunk in cc.get_cc_response(session_id, message):
+        response += chunk
+        yield make_sse(SSE_MESSAGE, chunk)
+    yield make_sse(SSE_SIGNAL, SSE_MESSAGE_END)
 
 
 async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> AsyncGenerator[dict[str, Any], Any]:
     """
     message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
     """
+    # 채팅방이 몰입형인지 확인
+    room = db_get_chatroom(db, room_id)
+    if room.character_id:
+        async for chunk in stream_character_chat(db, room_id, message, room.character_id):
+            yield chunk
+        return
+
     # 채팅방 ID를 session ID로 사용합니다.
     session_id = str(room_id)
     
