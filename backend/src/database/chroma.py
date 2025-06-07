@@ -1,14 +1,14 @@
 from typing import Optional, List, cast
 from pydantic import BaseModel
 from langchain_community.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain.schema import Document
 from langchain.text_splitter import CharacterTextSplitter
 from common.env import ENV_BACKEND_ROOT
 from datetime import datetime
 
 # GPT === "신"
-__all__ = ["chroma_fuzzy_search", "chroma_insert", "chroma_delete", "chroma_update"]
+__all__ = ["MovieMeta", "chroma_fuzzy_search", "chroma_insert", "chroma_delete", "chroma_update"]
 
 # 전역 경로 (환경 변수)
 CHROMA_DB_PATH = cast(str, ENV_BACKEND_ROOT) + '/src/database/chroma'
