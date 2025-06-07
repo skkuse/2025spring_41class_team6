@@ -1,52 +1,38 @@
 import { createBrowserRouter } from "react-router-dom";
+import MainPage from "@/pages/MainPage";
 import Chat from "@/pages/Chat";
 import History from "@/pages/History";
-import MainPage from "@/pages/MainPage";
 import Test from "@/pages/test/Test";
 import Login from "@/pages/test/Login";
+import PrivateRoute from "@/components/auth/PrivateRoute";
+
 const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <MainPage />,
-  },
+  { path: "/", element: <MainPage /> },
   {
     path: "chat",
+    element: <PrivateRoute />,
     children: [
-      {
-        path: "",
-        element: <Chat />,
-      },
-      {
-        path: ":chatId",
-        element: <Chat />,
-      },
+      { index: true, element: <Chat /> },
+      { path: ":chatId", element: <Chat /> },
     ],
   },
   {
-    path: "/history",
-    element: <History />,
-  },
-  {
-    path: "/history/:id",
-    element: <History />,
-  },
-  {
-    path: "/main",
-    element: <MainPage />,
-  },
-  {
-    path: "/test",
+    path: "history",
+    element: <PrivateRoute />,
     children: [
-      {
-        path: "",
-        element: <Test />,
-      },
-      {
-        path: "login",
-        element: <Login />,
-      },
+      { index: true, element: <History /> },
+      { path: ":id", element: <History /> },
     ],
   },
+  {
+    path: "test",
+    children: [
+      { index: true, element: <Test /> },
+      { path: "login", element: <Login /> },
+    ],
+  },
+  // optionally redirect /main → /
+  { path: "main", element: <MainPage /> },
 ]);
 
 export default router;

@@ -19,7 +19,6 @@ import {
 
 const MovieDetail = ({ open, onClose, id }) => {
   const [tabIndex, setTabIndex] = useState(0);
-  // const [isBookmarked, setIsBookmarked] = useState(false);
 
   const { mutate: postBookmark } = usePostBookmark();
   const { mutate: deleteBookmark } = useDeleteBookmark();
@@ -28,8 +27,13 @@ const MovieDetail = ({ open, onClose, id }) => {
   const { mutate: deleteArchive } = useDeleteArchive();
 
   const { data: movie, isLoading } = useMovie(id);
+
   if (!open) return null;
   if (isLoading) return <div>Loading...</div>;
+
+  // 디버깅용 로그
+  console.log("Movie data:", movie);
+  console.log("Current rating:", movie.rating, "Type:", typeof movie.rating);
 
   const tabLabels = ["개요", "출연진"];
 
@@ -42,7 +46,11 @@ const MovieDetail = ({ open, onClose, id }) => {
   };
 
   const handleLike = () => {
-    if (movie.rating === 0) {
+    if (
+      movie.rating === 0 ||
+      movie.rating === null ||
+      movie.rating === undefined
+    ) {
       postArchive({ movieId: id, rating: 5 });
     } else if (movie.rating === 1) {
       putArchive({ movieId: id, rating: 5 });
@@ -52,7 +60,11 @@ const MovieDetail = ({ open, onClose, id }) => {
   };
 
   const handleDislike = () => {
-    if (movie.rating === 0) {
+    if (
+      movie.rating === 0 ||
+      movie.rating === null ||
+      movie.rating === undefined
+    ) {
       postArchive({ movieId: id, rating: 1 });
     } else if (movie.rating === 5) {
       putArchive({ movieId: id, rating: 1 });
@@ -97,12 +109,12 @@ const MovieDetail = ({ open, onClose, id }) => {
           {/* 정보 */}
           <div className="flex-1 flex flex-col">
             <div>
-              <h2 id="movie-modal-title" className="text-2xl font-bold mb-2">
+              <h2 id="movie-modal-title" className="text-3xl font-bold mb-4">
                 {movie.title}
               </h2>
-              <div className="text-gray-500 text-sm mb-4">
+              <div className="text-gray-500 text-sm mb-8">
                 <span>{movie.release_date}</span> ·{" "}
-                <span>{movie.directors[0].name}</span> ·{" "}
+                <span>{movie.directors[0]?.name}</span> ·{" "}
               </div>
               <div className="flex flex-wrap gap-2 mb-4">
                 {movie.genres.map((genre, idx) => (
@@ -114,9 +126,6 @@ const MovieDetail = ({ open, onClose, id }) => {
                   </span>
                 ))}
               </div>
-              <p className="text-gray-700 text-base leading-relaxed">
-                {movie.overview}
-              </p>
             </div>
 
             {/* 상호작용 버튼 */}
