@@ -24,13 +24,6 @@ const router = createBrowserRouter([
       { path: ":id", element: <History /> },
     ],
   },
-  {
-    path: "test",
-    children: [
-      { index: true, element: <Test /> },
-      { path: "login", element: <Login /> },
-    ],
-  },
   // optionally redirect /main → /
   { path: "main", element: <MainPage /> },
 ]);
