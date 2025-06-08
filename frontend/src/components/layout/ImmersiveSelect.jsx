@@ -83,6 +83,7 @@ const ImmersiveSelect = ({ onClose }) => {
                 actor_name={character.actor.name}
                 image_url={character.actor.profile_image}
                 character_id={character.id}
+                onClose={onClose}
               />
             ))
           )}

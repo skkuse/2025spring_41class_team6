@@ -10,8 +10,6 @@ const WatchHistory = () => {
     return <div>Loading...</div>;
   }
 
-  console.log(archiveList);
-
   const likedMovies = archiveList.filter((movie) => movie.rating === 5);
   const dislikedMovies = archiveList.filter((movie) => movie.rating === 1);
 

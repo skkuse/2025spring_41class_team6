@@ -31,7 +31,7 @@ const ChatLanding = ({ mode = "normal" }) => {
       : "본인이 좋아하는 영화 속 인물과 대화해보세요";
 
   const handleStartChat = () => {
-    createChatroom({ initial_message: "" });
+    createChatroom();
   };
 
   return (

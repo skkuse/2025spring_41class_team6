@@ -22,30 +22,18 @@ llm_openai = ChatOpenAI(
     temperature=0.7,
     openai_api_key=openai_key
 )
-# gpt 4.1은 현재 방식의 메모리 요약 기능에서는 오류를 일으킵니다.(랭체인에 아직 반영 안 된듯)
-# 확인 결과 응답속도 면에서는 기존 4o을 쓰는 게 나은 거 같습니다.
-# 제미나이를 추가해서 프롬프트 출력 강화.
-# 클로드는 생각보다 성능이 별로이고 주어진 캐릭터를 왜곡하는 면이 있습니다.
-# # 프롬프트 개선용 LLM: anthropic/claude-3.7-sonnet (OpenRouter)
-# llm_claude = ChatOpenAI(
-#     model="anthropic/claude-3.7-sonnet",
-#     temperature=0.7,
-#     openai_api_key=openrouter_key,
-#     openai_api_base="https://openrouter.ai/api/v1",
-#     streaming=False #스트리밍 제외
-# )
 
 # 프롬프트 개선용 LLM: Gemini 2.5 Pro (OpenRouter)
-llm_gemini_refine = ChatOpenAI(
+llm_refine = ChatOpenAI(
     model="google/gemini-2.5-pro-preview",
-    temperature=0.7,
+    temperature=0.8,  # 프롬프트에서는 약간 더 창의적인 개선을 위해 temperature 조정
     openai_api_key=openrouter_key,
     openai_api_base="https://openrouter.ai/api/v1",
     streaming=False #스트리밍 제외
 )
 
 # 챗봇 대화용 LLM : Gemini 2.5 Pro (OpenRouter)
-llm_router = ChatOpenAI(
+llm_chat = ChatOpenAI(
     model="google/gemini-2.5-pro-preview",
     temperature=0.7,
     openai_api_key=openrouter_key,
@@ -82,7 +70,7 @@ character_prompt_template = PromptTemplate.from_template("""
 """)
 character_prompt_chain = LLMChain(prompt=character_prompt_template, llm=llm_openai)
 
-refine_template_gpt = PromptTemplate.from_template("""
+refine_template_first = PromptTemplate.from_template("""
 1) 아래의 프롬프트에서 명확하지 않거나 보강이 필요해 보이는 부분이 다듬어주세요.
 2) 수정한 새 캐릭터 프롬프트를 작성해 주세요.
 3) 이전 프롬프트에서 사용된 정보를 마찬가지로 사용해야 합니다.
@@ -92,9 +80,9 @@ refine_template_gpt = PromptTemplate.from_template("""
 [캐릭터 프롬프트]
 (여기에 생성된 요약 및 대화 예시를 넣어주세요)
 """)
-refine_chain_gpt = LLMChain(llm=llm_openai, prompt=refine_template_gpt)
+refine_chain_first = LLMChain(llm=llm_openai, prompt=refine_template_first)
 
-refine_template_gemini = PromptTemplate.from_template("""
+refine_template_second = PromptTemplate.from_template("""
 1. 아래의 프롬프트에서 사실이 아니거나 보강이 필요해 보이는 부분이 있으면 다듬어주세요.
 2) 수정한 캐릭터 프롬프트를 작성해 주세요.
 3) 기존 프롬프트에 대한 문제 분석은 출력하지 마세요.
@@ -105,7 +93,7 @@ refine_template_gemini = PromptTemplate.from_template("""
 [캐릭터 프롬프트]
 (여기에 생성된 요약 및 대화 예시를 넣어주세요)
 """)
-refine_chain_gemini = LLMChain(llm=llm_gemini_refine, prompt=refine_template_gemini)
+refine_chain_second = LLMChain(llm=llm_refine, prompt=refine_template_second)
 
 cached_chroma_dict = {} # 여기서 세션별 Chroma 캐시를 위한 딕셔너리 선언
 session_memories = {}   # 세션별 메모리를 위한 딕셔너리 선언
@@ -144,18 +132,13 @@ def add_to_chroma(title: str, tmdb_overview: str|None, wikipedia_content: str|No
 
 def load_memory(session_id: str, summary: str, messages: list):
     memory = ConversationSummaryBufferMemory(
-        llm=ChatOpenAI(temperature=0),
+        llm=ChatOpenAI(temperature=0, openai_api_key=openai_key),
         return_messages=True,
         max_token_limit=1000
     )
     memory.moving_summary_buffer= summary
     memory.chat_memory.messages = messages
     session_memories[session_id] = memory
-
-
-
-
-
 
 def get_chroma_for_session(session_id: str):
     """
@@ -198,7 +181,7 @@ def get_memory(session_id):
     return session_memories[session_id]
 
 def stream_chat_response(prompt_text: str) -> Iterator[str]:
-    for chunk in llm_router.stream(prompt_text):
+    for chunk in llm_chat.stream(prompt_text):
         if hasattr(chunk, "content") and chunk.content:
             yield chunk.content
 
@@ -246,18 +229,18 @@ def run_character_mode():
     print(draft_prompt)
     
     # 4) 1차 개선 프롬프트
-    gpt_review_response = refine_chain_gpt.invoke({"text": draft_prompt})["text"].strip()
-    # 4-1) Claude 프롬프트 출력
+    gpt_review_response = refine_chain_first.invoke({"text": draft_prompt})["text"].strip()
+    # 4-1) GPT 프롬프트 출력
     print("\n----- [1차 개선 프롬프트: GPT-4o 개선] -----")
     print(gpt_review_response)
     
-    # 5) 2차 개선 (Gemini 2.5 Pro via OpenRouter)
-    gemini_response = refine_chain_gemini.invoke({"text": gpt_review_response})["text"].strip()
-    # 5-1) Gemini 프롬프트 출력
-    print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 개선] -----")
-    print(gemini_response)
+    # 5) 2차 개선 (Gemini 2.5 Pro with different temperature)
+    final_response = refine_chain_second.invoke({"text": gpt_review_response})["text"].strip()
+    # 5-1) 최종 프롬프트 출력
+    print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 최종 개선] -----")
+    print(final_response)
     # 6) 최종 프롬프트를 session_prompts에 저장
-    session_prompts[session_id] = gemini_response
+    session_prompts[session_id] = final_response
     
     ### 실제 캐릭터와 채팅 루프...
     prompt_template = get_qa_chain_prompt(session_id)
@@ -311,15 +294,15 @@ def create_personality(movie: str, character: str, session_id: str):
     print(draft_prompt)
     
     # 4) 1차 개선 프롬프트
-    gpt_review_response = refine_chain_gpt.invoke({"text": draft_prompt})["text"].strip()
-    # 4-1) Claude 프롬프트 출력
+    gpt_review_response = refine_chain_first.invoke({"text": draft_prompt})["text"].strip()
+    # 4-1) GPT 프롬프트 출력
     print("\n----- [1차 개선 프롬프트: GPT-4o 개선] -----")
     print(gpt_review_response)
     
-    # 5) 2차 개선 (Gemini 2.5 Pro via OpenRouter)
-    gemini_response = refine_chain_gemini.invoke({"text": gpt_review_response})["text"].strip()
-    # 5-1) Gemini 프롬프트 출력
-    print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 개선] -----")
-    print(gemini_response)
+    # 5) 2차 개선 (GPT-4o with different temperature)
+    final_response = refine_chain_second.invoke({"text": gpt_review_response})["text"].strip()
+    # 5-1) 최종 프롬프트 출력
+    print("\n----- [2차 개선 프롬프트(최종): GPT-4o 최종 개선] -----")
+    print(final_response)
 
-    return cast(str, gemini_response)
+    return cast(str, final_response)
