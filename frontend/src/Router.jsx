@@ -2,8 +2,6 @@ import { createBrowserRouter } from "react-router-dom";
 import MainPage from "@/pages/MainPage";
 import Chat from "@/pages/Chat";
 import History from "@/pages/History";
-import Test from "@/pages/test/Test";
-import Login from "@/pages/test/Login";
 import PrivateRoute from "@/components/auth/PrivateRoute";
 
 const router = createBrowserRouter([
