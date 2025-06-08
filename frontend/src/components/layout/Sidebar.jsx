@@ -59,6 +59,23 @@ const Sidebar = () => {
   const { resetChatroom } = useChatroomStore();
   const { mutate: deleteChatroom } = useDeleteChatroom();
 
+  // 현재 chatId가 어느 모드에 속하는지 확인하여 mode 설정
+  useEffect(() => {
+    if (chatId && chatrooms) {
+      const isInNormal = chatrooms.normal.some((room) => room.id == chatId);
+      const isInImmersive = chatrooms.immersive.some(
+        (room) => room.id == chatId
+      );
+
+      if (isInImmersive) {
+        setMode("immersive");
+      } else if (isInNormal) {
+        setMode("normal");
+      }
+      // 둘 다 아닌 경우는 현재 mode 유지
+    }
+  }, [chatId, chatrooms]);
+
   useEffect(() => {
     const fetchUserInfo = async () => {
       try {
@@ -97,8 +114,6 @@ const Sidebar = () => {
 
   const confirmDelete = () => {
     // TODO: 실제 삭제 로직 구현
-    console.log("Deleting chat:", selectedChatId);
-    console.log("Current chatId:", chatId);
     setShowDeleteModal(false);
     if (selectedChatId == chatId) {
       navigate("/chat");

@@ -35,7 +35,6 @@ const LoginForm = () => {
     e.preventDefault();
     try {
       const response = await registerUser({ ...registerForm, login: true });
-      console.log("회원가입 성공:", response);
       alert("회원가입이 완료되었습니다!");
       setActiveTab("login");
       // 회원가입 후 로그인 상태 확인
@@ -50,7 +49,6 @@ const LoginForm = () => {
     e.preventDefault();
     try {
       const response = await loginUser(loginForm);
-      console.log("로그인 성공:", response);
       alert("로그인이 완료되었습니다!");
       navigate("/chat");
     } catch (error) {
@@ -62,7 +60,6 @@ const LoginForm = () => {
   const handleLogout = async () => {
     try {
       const response = await logoutUser();
-      console.log("로그아웃 성공:", response);
       alert("로그아웃이 완료되었습니다!");
       navigate("/");
     } catch (error) {

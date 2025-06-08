@@ -21,7 +21,6 @@ const Login = () => {
     e.preventDefault();
     try {
       const response = await registerUser({ ...registerForm, login: false });
-      console.log("회원가입 성공:", response);
       alert("회원가입이 완료되었습니다!");
     } catch (error) {
       console.error("회원가입 실패:", error);
@@ -33,7 +32,6 @@ const Login = () => {
     e.preventDefault();
     try {
       const response = await loginUser(loginForm);
-      console.log("로그인 성공:", response);
       alert("로그인이 완료되었습니다!");
     } catch (error) {
       console.error("로그인 실패:", error);
@@ -44,7 +42,6 @@ const Login = () => {
   const handleLogout = async () => {
     try {
       const response = await logoutUser();
-      console.log("로그아웃 성공:", response);
       alert("로그아웃이 완료되었습니다!");
     } catch (error) {
       console.error("로그아웃 실패:", error);

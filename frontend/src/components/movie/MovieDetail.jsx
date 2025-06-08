@@ -31,10 +31,6 @@ const MovieDetail = ({ open, onClose, id }) => {
   if (!open) return null;
   if (isLoading) return <div>Loading...</div>;
 
-  // 디버깅용 로그
-  console.log("Movie data:", movie);
-  console.log("Current rating:", movie.rating, "Type:", typeof movie.rating);
-
   const tabLabels = ["개요", "출연진"];
 
   const handleBookmark = () => {

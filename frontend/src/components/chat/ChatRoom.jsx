@@ -3,7 +3,7 @@ import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import SendIcon from "@mui/icons-material/Send";
 import useMessagesList from "@/hooks/chat/useMessagesList";
 import CircularProgress from "@mui/material/CircularProgress";
-import { useRef, useEffect, useCallback, useMemo, memo } from "react";
+import { useRef, useEffect, useCallback, useMemo, memo, useState } from "react";
 import MarkdownChat from "@/components/chat/MarkdownChat";
 import SendChat from "@/components/chat/SendChat";
 import MovieRecommend from "@/components/layout/MovieRecommend";
@@ -15,6 +15,7 @@ import {
   useTypingAnimation,
   useAutoScroll,
 } from "@/hooks/chat/useChatroom";
+import { Fade, Grow, Collapse } from "@mui/material";
 
 // 메모이제이션된 메시지 컴포넌트
 const MemoizedMessage = memo(({ msg }) => (
@@ -40,6 +41,31 @@ const MemoizedMessage = memo(({ msg }) => (
   </div>
 ));
 
+// 트랜지션 메시지 컴포넌트
+const TransitionMessage = ({ show, children, type = "fade" }) => {
+  if (type === "fade") {
+    return (
+      <Fade in={show} timeout={300}>
+        <div>{children}</div>
+      </Fade>
+    );
+  }
+
+  if (type === "grow") {
+    return (
+      <Grow in={show} timeout={300}>
+        <div>{children}</div>
+      </Grow>
+    );
+  }
+
+  return (
+    <Collapse in={show} timeout={300}>
+      <div>{children}</div>
+    </Collapse>
+  );
+};
+
 const ChatRoom = () => {
   // Zustand store
   const {
@@ -61,20 +87,52 @@ const ChatRoom = () => {
   // 컴포넌트 레퍼런스
   const containerRef = useRef(null);
 
+  // 트랜지션 상태 관리
+  const [showSendMessage, setShowSendMessage] = useState(false);
+  const [showStreamingMessage, setShowStreamingMessage] = useState(false);
+  const [showServerMessage, setShowServerMessage] = useState(false);
+
   // 서버 상태 fetch
-  const { data: messages, isLoading } = useMessagesList(chatId);
+  const { data: messages, isLoading, isFetching } = useMessagesList(chatId);
 
   // 커스텀 훅
   const sendChatMessage = useChatMessageSend(chatId);
   useTypingAnimation();
 
-  // 자동 스크롤 - 개별 dependency로 전달
+  // 자동 스크롤
   const { messagesEndRef } = useAutoScroll(
     messages,
     sendMessage,
     streamingMessage,
     isStreaming
   );
+
+  // 트랜지션 효과 관리
+  useEffect(() => {
+    if (sendMessage) {
+      setShowSendMessage(true);
+    } else {
+      // 페이드 아웃 후 상태 변경
+      setTimeout(() => setShowSendMessage(false), 300);
+    }
+  }, [sendMessage]);
+
+  useEffect(() => {
+    if (streamingMessage) {
+      // sendMessage가 사라진 후 나타나도록 지연
+      setTimeout(() => setShowStreamingMessage(true), 100);
+    } else {
+      setShowStreamingMessage(false);
+    }
+  }, [streamingMessage]);
+
+  useEffect(() => {
+    if (serverStatus) {
+      setTimeout(() => setShowServerMessage(true), 200);
+    } else {
+      setShowServerMessage(false);
+    }
+  }, [serverStatus]);
 
   // 메시지 전송 핸들러
   const handleSendMessage = useCallback(() => {
@@ -118,6 +176,8 @@ const ChatRoom = () => {
     );
   }
 
+  const hasContent = messages?.length > 0 || isStreaming || sendMessage;
+
   return (
     <div className="flex flex-1 bg-white h-full w-full">
       {/* 메인 채팅 영역 */}
@@ -142,49 +202,58 @@ const ChatRoom = () => {
         </div>
 
         {/* 채팅 메시지 영역 */}
-        {messages?.length > 0 || isStreaming ? (
-          <div ref={containerRef} className="flex-1 overflow-y-auto">
-            {isLoading ? (
-              <div className="flex items-center justify-center h-full">
-                <CircularProgress />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-8 w-[600px] mx-auto p-4">
+        <div ref={containerRef} className="flex-1 overflow-y-auto">
+          <div className="flex flex-col gap-8 w-[600px] mx-auto p-4">
+            {hasContent ? (
+              <>
                 {/* 메모이제이션된 메시지 리스트 */}
                 {messagesList}
 
-                {/* 임시 메시지: 내가 막 보낸 것 */}
-                {sendMessage && <SendChat message={sendMessage} />}
+                {/* 임시 메시지: 내가 막 보낸 것 - Fade 트랜지션 */}
+                <TransitionMessage
+                  show={showSendMessage && !!sendMessage}
+                  type="fade"
+                >
+                  {sendMessage && <SendChat message={sendMessage} />}
+                </TransitionMessage>
 
-                {/* 스트리밍 중인 메시지 */}
-                {streamingMessage && (
-                  <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
-                    <MarkdownChat>{streamingMessage}</MarkdownChat>
+                {/* 스트리밍 중인 메시지 - Grow 트랜지션 */}
+                <TransitionMessage
+                  show={showStreamingMessage && !!streamingMessage}
+                  type="grow"
+                >
+                  {streamingMessage && (
+                    <div className="p-3 rounded-lg opacity-90 animate-pulse border-gray-200 shadow-md transition-all duration-200">
+                      <MarkdownChat>{streamingMessage}</MarkdownChat>
+                    </div>
+                  )}
+                </TransitionMessage>
+
+                {/* 서버 프로세싱 안내 메시지 - Collapse 트랜지션 */}
+                <TransitionMessage show={showServerMessage} type="collapse">
+                  <ServerMessage status={serverStatus} />
+                </TransitionMessage>
+              </>
+            ) : (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <Fade in={!isFetching} timeout={500}>
+                  <div className="text-2xl text-gray-700 font-semibold">
+                    {isFetching ? (
+                      <CircularProgress size={24} />
+                    ) : (
+                      "영화에 대해 궁금한게 있으신가요?"
+                    )}
                   </div>
-                )}
-
-                {/* 서버 프로세싱 안내 메시지 */}
-                <ServerMessage status={serverStatus} />
-
-                <div ref={messagesEndRef} />
+                </Fade>
               </div>
             )}
+
+            <div ref={messagesEndRef} />
           </div>
-        ) : (
-          <div className="flex items-center justify-center mt-auto">
-            <div className="mb-8 text-2xl text-gray-700 font-semibold">
-              {"영화에 대해 궁금한게 있으신가요?"}
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* 하단 입력창 */}
-        <div
-          className={`w-full border-t border-gray-100 bg-white ${
-            messages?.length === 0 && !isStreaming ? "mb-auto" : ""
-          }
-          }`}
-        >
+        <div className="w-full border-t border-gray-100 bg-white">
           <div className="px-4 py-6">
             <div className="max-w-[700px] mx-auto">
               <div className="relative flex items-center gap-3 bg-gray-50 rounded-2xl px-1 py-1 shadow-sm border border-gray-100 transition-all duration-200 hover:shadow-md focus-within:shadow-md focus-within:border-gray-200">

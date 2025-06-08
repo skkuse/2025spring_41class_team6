@@ -28,7 +28,6 @@ axiosInterceptor.interceptors.response.use(
     //   vanillaAxios.post("auth/logout");
     //   window.location.href = "/";
     // }
-    console.log(error);
     return Promise.reject(error);
   }
 );

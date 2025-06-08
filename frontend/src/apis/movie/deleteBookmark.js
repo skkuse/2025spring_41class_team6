@@ -6,7 +6,6 @@ const deleteBookmark = async (movieId) => {
       id: movieId,
     },
   });
-  console.log(response.data);
   return response.data;
 };
 
