@@ -11,7 +11,8 @@ from typing import Iterator
 from llm.crawler import get_tmdb_overview, get_wikipedia_content
 
 tmdb.API_KEY = os.environ.get("TMDB_API_KEY")
-openai_key = os.environ.get("OPENAI_API_KEY") # 모든 작업에 사용
+openai_key = os.environ.get("OPENAI_API_KEY") # 캐릭터 프롬프트 생성용
+openrouter_key = os.environ.get("OPEN_ROUTER_KEY") # 대화용
 
 embedding = OpenAIEmbeddings(openai_api_key=openai_key)
 
@@ -22,19 +23,21 @@ llm_openai = ChatOpenAI(
     openai_api_key=openai_key
 )
 
-# 프롬프트 개선용 LLM: GPT-4o (다른 temperature 설정)
+# 프롬프트 개선용 LLM: Gemini 2.5 Pro (OpenRouter)
 llm_refine = ChatOpenAI(
-    model="gpt-4o",
-    temperature=0.8,  # 약간 더 창의적인 개선을 위해 temperature 조정
-    openai_api_key=openai_key,
-    streaming=False
+    model="google/gemini-2.5-pro-preview",
+    temperature=0.8,  # 프롬프트에서는 약간 더 창의적인 개선을 위해 temperature 조정
+    openai_api_key=openrouter_key,
+    openai_api_base="https://openrouter.ai/api/v1",
+    streaming=False #스트리밍 제외
 )
 
-# 챗봇 대화용 LLM : GPT-4o-mini (비용 절감)
+# 챗봇 대화용 LLM : Gemini 2.5 Pro (OpenRouter)
 llm_chat = ChatOpenAI(
-    model="gpt-4o-mini",  # 대화용으로는 더 가벼운 모델 사용
+    model="google/gemini-2.5-pro-preview",
     temperature=0.7,
-    openai_api_key=openai_key,
+    openai_api_key=openrouter_key,
+    openai_api_base="https://openrouter.ai/api/v1",
     streaming=True
 )
 
@@ -231,10 +234,10 @@ def run_character_mode():
     print("\n----- [1차 개선 프롬프트: GPT-4o 개선] -----")
     print(gpt_review_response)
     
-    # 5) 2차 개선 (GPT-4o with different temperature)
+    # 5) 2차 개선 (Gemini 2.5 Pro with different temperature)
     final_response = refine_chain_second.invoke({"text": gpt_review_response})["text"].strip()
     # 5-1) 최종 프롬프트 출력
-    print("\n----- [2차 개선 프롬프트(최종): GPT-4o 최종 개선] -----")
+    print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 최종 개선] -----")
     print(final_response)
     # 6) 최종 프롬프트를 session_prompts에 저장
     session_prompts[session_id] = final_response
