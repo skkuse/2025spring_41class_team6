@@ -5,22 +5,38 @@ from common.env import ENV_API_SKIP_AUTH
 
 USER_ID_COOKIE_KEY = "user_id"
 
-# API_SKIP_AUTH가 설정되더라도 DB에 ID=1인 유저 정보는 필요함
-DEFAULT_USER_ID = 1 # API_SKIP_AUTH 시, cookie가 없을 때 자동 선택되는 user id
-
-def config_skip_auth():
-    return ENV_API_SKIP_AUTH == "1"
-
-def get_current_user_id(request: Request):
+def check_user_id(request: Request):
+    """Exception-Free User ID 추출"""
     user_id = request.cookies.get(USER_ID_COOKIE_KEY)
     if not user_id:
-        if not config_skip_auth():
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
-        else:
-            return DEFAULT_USER_ID
+      return None
+
     return int(user_id)
 
+def get_current_user_id(request: Request):
+    """Cookie에서 User ID를 추출"""
+    user_id = request.cookies.get(USER_ID_COOKIE_KEY)
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
+
+    return int(user_id)
+
+def validate_user(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    """Cookie의 User ID를 validate 합니다"""
+    user = db_find_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+@router.get("/user", response_model=UserInfoResponse)
+async def get_user_information(user: UserInfoInternal = Depends(validate_user)):
+    return UserInfoResponse(
+        id = user.id,
+        email=user.email,
+        nickname=user.nickname
+    )
 
 @router.post("/register", response_model=UserInfoResponse)
 async def register_user(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
