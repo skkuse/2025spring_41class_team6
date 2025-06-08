@@ -7,7 +7,7 @@ const useCreateChatroom = () => {
   const navigate = useNavigate();
 
   return useMutation({
-    mutationFn: ({ initial_message }) => createChatroom({ initial_message }),
+    mutationFn: () => createChatroom(),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["chatroomList"] });
       navigate(`/chat/${data.id}`);

@@ -8,7 +8,7 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import LLMChain
 from langchain.memory import ConversationSummaryBufferMemory
 from typing import Iterator
-from crawler import get_tmdb_overview, get_wikipedia_content
+from llm.crawler import get_tmdb_overview, get_wikipedia_content
 
 tmdb.API_KEY = os.environ.get("TMDB_API_KEY")
 openai_key = os.environ.get("OPENAI_API_KEY") # 캐릭터 프롬프트 생성용
@@ -110,6 +110,52 @@ refine_chain_gemini = LLMChain(llm=llm_gemini_refine, prompt=refine_template_gem
 cached_chroma_dict = {} # 여기서 세션별 Chroma 캐시를 위한 딕셔너리 선언
 session_memories = {}   # 세션별 메모리를 위한 딕셔너리 선언
 session_prompts = {}    # 세션별 캐릭터 프롬프트를 저장할 딕셔너리 선언
+
+def is_memory_on_cache(session_id):
+    return session_id in session_memories
+
+def set_character_prompts(session_id: str, prompts: str):
+    session_prompts[session_id] = prompts
+
+def _is_cached_on_chroma(title: str, db):
+    try:
+        existing_titles = {doc.metadata['title'] for doc in db.similarity_search("영화", k=50)}
+    except:
+        existing_titles = set()
+    return title in existing_titles
+
+def is_cached_on_chroma(title: str, session_id):
+    return _is_cached_on_chroma(title, get_chroma_for_session(session_id))
+
+def _add_to_chroma(movie_name: str, overview: str, wiki: str, db):
+    combined = f"[영화 제목] {movie_name}\n\n[TMDB 줄거리]\n{overview}\n\n[Wikipedia 문서]\n{wiki}"
+    doc = Document(page_content=combined, metadata={"title": movie_name})
+
+    splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+    split_docs = splitter.split_documents([doc])
+    db.add_documents(split_docs)
+
+def add_to_chroma(title: str, tmdb_overview: str|None, wikipedia_content: str|None, session_id):
+    if not tmdb_overview:
+        tmdb_overview = ""
+    if not wikipedia_content:
+        wikipedia_content = ""
+    _add_to_chroma(title, tmdb_overview, wikipedia_content, get_chroma_for_session(session_id))
+
+def load_memory(session_id: str, summary: str, messages: list):
+    memory = ConversationSummaryBufferMemory(
+        llm=ChatOpenAI(temperature=0),
+        return_messages=True,
+        max_token_limit=1000
+    )
+    memory.moving_summary_buffer= summary
+    memory.chat_memory.messages = messages
+    session_memories[session_id] = memory
+
+
+
+
+
 
 def get_chroma_for_session(session_id: str):
     """
@@ -230,3 +276,50 @@ def run_character_mode():
             full_answer += token
         print()
         memory.save_context({"input": user_input}, {"output": full_answer})
+
+######################### 통합 ###################
+
+async def get_cc_response(session_id: str, user_input: str):
+    memory = get_memory(session_id)
+    prompt_template = get_qa_chain_prompt(session_id)
+
+    summary = memory.buffer or "(요약 없음)"
+    full_prompt = prompt_template.format(history=summary, question=user_input)
+        
+    full_answer = ""
+    for token in stream_chat_response(full_prompt):
+        full_answer += token
+        yield token
+
+    memory.save_context({"input": user_input}, {"output": full_answer})
+    print(memory.buffer)
+
+def create_personality(movie: str, character: str, session_id: str):
+    from typing import cast
+
+    db = get_chroma_for_session(session_id)
+    docs = db.similarity_search(movie, k=5)
+    context = "\n\n".join([doc.page_content for doc in docs])
+    
+    prompt_result = character_prompt_chain.invoke({
+        "name": character,
+        "context": context
+    })
+    draft_prompt = prompt_result['text'].strip()
+    # 3-1) 초안 출력
+    print("\n----- [초안: GPT-4o 생성] -----")
+    print(draft_prompt)
+    
+    # 4) 1차 개선 프롬프트
+    gpt_review_response = refine_chain_gpt.invoke({"text": draft_prompt})["text"].strip()
+    # 4-1) Claude 프롬프트 출력
+    print("\n----- [1차 개선 프롬프트: GPT-4o 개선] -----")
+    print(gpt_review_response)
+    
+    # 5) 2차 개선 (Gemini 2.5 Pro via OpenRouter)
+    gemini_response = refine_chain_gemini.invoke({"text": gpt_review_response})["text"].strip()
+    # 5-1) Gemini 프롬프트 출력
+    print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 개선] -----")
+    print(gemini_response)
+
+    return cast(str, gemini_response)

@@ -171,18 +171,23 @@ def tmdb_full_image_path(path: str, type: ImgType, size_max: int|None=None, secu
 
   return "/".join([base_url, sizes, path])
 
-def tmdb_parse_title(info: dict) -> str:
-  return info["title"]
+# added NULL safety
+def tmdb_parse_title(info: dict) -> str|None:
+  return info.get("title")
 
-def tmdb_parse_overview(info: dict) -> str:
-  return info["overview"]
+def tmdb_parse_overview(info: dict) -> str|None:
+  return info.get("overview")
 
-def tmdb_parse_poster_path(info: dict) -> str:
-  return info["poster_path"]
+def tmdb_parse_poster_path(info: dict) -> str|None:
+  return info.get("poster_path")
 
-def tmdb_parse_release_date(info: dict) -> date:
-  return date.fromisoformat(info["release_date"])
+def tmdb_parse_release_date(info: dict) -> date|None:
+  d = info.get("release_date")
+  return date.fromisoformat(d) if d else None
 
 def tmdb_parse_genres(info: dict) -> list[str]:
-  tmp = info["genres"]
-  return [i["name"] for i in tmp]
+  tmp = info.get("genres")
+  if not tmp:
+    return []
+
+  return [i["name"] for i in tmp if i.get("name")]

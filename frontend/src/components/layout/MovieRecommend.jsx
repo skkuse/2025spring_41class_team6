@@ -7,8 +7,6 @@ const MovieRecommend = ({ onClose, chatroomId }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const { data: recommendation, isLoading } = useRecommend(chatroomId);
 
-  console.log(recommendation);
-
   // useEffect를 사용해서 데이터가 로드되면 currentPage를 설정
   useEffect(() => {
     if (recommendation?.length) {

@@ -6,6 +6,7 @@ from common.env import ENV_API_SKIP_AUTH
 USER_ID_COOKIE_KEY = "user_id"
 
 def check_user_id(request: Request):
+    """Exception-Free User ID 추출"""
     user_id = request.cookies.get(USER_ID_COOKIE_KEY)
     if not user_id:
       return None
@@ -13,13 +14,29 @@ def check_user_id(request: Request):
     return int(user_id)
 
 def get_current_user_id(request: Request):
+    """Cookie에서 User ID를 추출"""
     user_id = request.cookies.get(USER_ID_COOKIE_KEY)
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
 
     return int(user_id)
 
+def validate_user(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    """Cookie의 User ID를 validate 합니다"""
+    user = db_find_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+@router.get("/user", response_model=UserInfoResponse)
+async def get_user_information(user: UserInfoInternal = Depends(validate_user)):
+    return UserInfoResponse(
+        id = user.id,
+        email=user.email,
+        nickname=user.nickname
+    )
 
 @router.post("/register", response_model=UserInfoResponse)
 async def register_user(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):

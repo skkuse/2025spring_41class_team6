@@ -58,9 +58,9 @@ class ExternalIdInfo(BaseModel):
 class TmdbRequestResult(BaseModel):
     id: int
     title: str
-    overview: str
-    poster_path: str
-    release_date: date
+    overview: Optional[str]
+    poster_path: Optional[str]
+    release_date: Optional[date]
     genres: List[str]
     casts: List[ActorInfo]
     directors: List[DirectorInfo]

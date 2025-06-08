@@ -79,8 +79,8 @@ class MovieReview(Base):
 
 class RecommendedMovie(Base):
     __tablename__ = TABLE_RECOMMENDED_MOVIE
-    chat_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_CHAT_HISTORY), ondelete="CASCADE"), primary_key=True)
-    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True)
+    chat_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_CHAT_HISTORY), ondelete="CASCADE"), primary_key=True, nullable=False)
+    movie_id : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), primary_key=True, nullable=False)
 
 @event.listens_for(Movie, "before_update", propagate=True)
 def auto_update_last_modified(mapper, connection, target: Movie):
@@ -127,13 +127,16 @@ class ChatHistory(Base):
 
 class CharacterProfile(Base):
     __tablename__ = TABLE_CHARACTER_PROFILE
-    id             : Mapped[int]      = mapped_column(primary_key=True, index=True, autoincrement=True)
-    movie_id       : Mapped[int]      = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), nullable=False)
-    name           : Mapped[str]      = mapped_column(nullable=False)
-    description    : Mapped[str]      = mapped_column(nullable=False)
-    tone           : Mapped[str]      = mapped_column(nullable=False)
+    id             : Mapped[int] = mapped_column(primary_key=True, index=True, autoincrement=True)
+    movie_id       : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_MOVIE), ondelete="CASCADE"), nullable=False)
+    name           : Mapped[str] = mapped_column(nullable=False)
+    description    : Mapped[Optional[str]]
+    tone           : Mapped[Optional[str]]
     other_features : Mapped[Optional[str]]
-    actor_id       : Mapped[Optional[int]] = mapped_column(ForeignKey(fk(TABLE_ACTOR), ondelete="SET NULL"))
+    actor_id       : Mapped[int] = mapped_column(ForeignKey(fk(TABLE_ACTOR), ondelete="SET NULL"))
+    __table_args__ = (
+      UniqueConstraint("movie_id", "name", "actor_id", name="character_uniqueness"),
+    )
 
 class Genre(Base):
     __tablename__ = TABLE_GENRE
