@@ -82,7 +82,7 @@ const ChatLanding = ({ mode = "normal" }) => {
           "채팅 시작하기"
         )}
       </button>
-      <div className="mt-6 text-sm text-gray-500 text-center max-w-md">
+      <div className="mt-6 text-sm text-gray-500 text-center max-w-md" style={{"text-wrap-mode": "nowrap"}}>
         개봉년도나 주연 배우 같은 키워드를 함께 입력하면 더 정확한 검색이
         가능합니다
       </div>
