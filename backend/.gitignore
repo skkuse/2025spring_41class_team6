@@ -7,3 +7,4 @@ venv/
 **/*.sqlite3
 **/chroma_temp/
 **/chroma_data/
+*.log
