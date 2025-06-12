@@ -152,6 +152,20 @@ def _is_cached_on_chroma(title: str, db):
 def is_cached_on_chroma(title: str, session_id):
     return _is_cached_on_chroma(title, get_chroma_for_session(session_id))
 
+def exist_in_chroma(title: str, session_id):
+    from common.logging_config import logger
+
+    db = get_chroma_for_session(session_id)
+    try:
+        results = db.get(where={"title": title})
+        return len(results['ids']) > 0
+    except Exception as e:
+        logger.error(f"chroma EXIST 연산 중 에러: {e}")
+        return False
+
+def delete_from_chroma(title: str, session_id):
+    get_chroma_for_session(session_id).delete(where={"title": title})
+
 def _add_to_chroma(movie_name: str, overview: str, wiki: str, reviews: list[str], db):
     joined_reviews = "\n\n".join(f"- {r}" for r in reviews)
 

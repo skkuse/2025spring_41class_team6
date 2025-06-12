@@ -1,3 +1,4 @@
+from llm.tools import get_current_subject
 import llm.qachat as qachat
 import llm.crawler as crawler
 from database.utils import *
@@ -8,6 +9,7 @@ from typing import AsyncGenerator, TypedDict
 from database.chroma import *
 from datetime import datetime, timezone
 from sse import *
+from common.logging_config import logger
 
 class SummaryType(TypedDict):
     """
@@ -56,22 +58,23 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
 
     return { "message": full_answer, "recommendation": movie_ids }
 
-def fuzzy_fast(db: Session, title: str, keyword: str|None):
-    meta = chroma_fuzzy_search(title, [keyword] if keyword else None)
+def fuzzy_fast(db: Session, title: str, keyword: dict|None):
+    meta = chroma_fuzzy_search(title, None)
     if meta:
         movie = db_find_movie_by_id(db, meta.sqlite_id, True)
         return movie, meta
     return None, None
 
-def fuzzy_slow(db: Session, title: str, keyword: str|None, meta: MovieMeta|None):
+def fuzzy_slow(db: Session, title: str, keyword: dict|None, meta: MovieMeta|None):
     movie = None
+    logger.info("slow path")
     if meta:
         if meta.tmdb_id is not None:
             movie = update_movie_by_tmdb_id(db, meta.tmdb_id)
         else:
             movies = update_movie_by_tmdb_search(db, search={
                 "query": meta.title,
-                "primary_release_year": meta.release_date or "",
+                "primary_release_year": str(meta.year) if meta.year else "",
             })
             if len(movies) > 0:
                 movie = movies[0]
@@ -80,25 +83,33 @@ def fuzzy_slow(db: Session, title: str, keyword: str|None, meta: MovieMeta|None)
             chroma_delete(meta)
             meta.sqlite_id = movie.id
             meta.tmdb_id = movie.tmdb_id
-            meta.genres = meta.genres
             meta.created_at = datetime.now(timezone.utc).isoformat()
             meta.title = movie.title
             if movie.release_date:
-                meta.release_date = movie.release_date.isoformat()
+                meta.year = movie.release_date.year
             chroma_insert(meta)
         else:
             chroma_delete(meta)
             return
         
     else:
+        logger.info("????")
         movies = update_movie_by_tmdb_search(db, search={
             "query": title,
-            "primary_release_year": keyword or ""
+            "primary_release_year": keyword["year"] if keyword and keyword.get("year") else ""
         })
         if len(movies) == 0:
             return
 
         movie = movies[0]
+        chroma_insert(MovieMeta(
+            sqlite_id=movie.id,
+            tmdb_id=movie.tmdb_id,
+            series=keyword["series"] if keyword and keyword.get("series") else 1,
+            title=movie.title,
+            year=movie.release_date.year if movie.release_date else None,
+            created_at=movie.last_update.isoformat()
+        ))
 
     return movie
 
@@ -199,57 +210,91 @@ async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int,
     # 채팅방 ID를 session ID로 사용합니다.
     session_id = str(room_id)
     
+    logger.info(f"user message: {message}")
     message = _preprocess_user_input(message)
     titles: list[str] = []
-    hints = qachat.extract_titles_and_metadata_with_llm(message)
-    if hints and hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
-        titles = cast(list[str], hints)
+    context = db_get_chatroom_context(db, room_id).summary
+    if context:
+        context = cast(SummaryType, json.loads(context))
+        history = messages_from_dict(context["messages"])
     else:
-        for hint in hints:
-            title = hint.get("title")
-            keyword = hint.get("keyword")
-            assert(title)
+        history = []
 
-            if qachat.is_cached_on_chroma(title, session_id):
-                continue
+    subjects = get_current_subject(history, message)
+    if subjects and subjects[0].confidence < 0.3:
+        logger.info(f"title이 명확하지 않음: \n{subjects}")
+        titles = ['제목이 명확하지 않음 사용자에게 재입력 요청']
+    else:
+        logger.info(f'인식된 title({len(subjects)}): {subjects}')
 
-            movie, meta = fuzzy_fast(db, title, keyword)
-            if not movie:
-                yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
-                movie = fuzzy_slow(db, title, keyword, meta)
-                yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
-
-            if movie is None:
+        # we take a heuristic approach; if we think we did it enough, stop over-researching
+        primary_threshold = 0.85
+        secondary_threshold = 0.65
+        for subject in subjects:
+            if not subject.title:
                 continue
             
-            print(f"[send_message_to_qachat] db_data:\n{movie}\n\n")
+            title = subject.title
+            year = subject.year
+            series = subject.series
+
+            if subject.confidence < secondary_threshold:
+                break # stop. just stop...
             
-            # 4. See if we have any outdated, or missing data in our DB
-            if not movie.wiki_document:
+            movie, meta = fuzzy_fast(db, title, keyword={ "year": year, "series": series })
+            if movie:
+                logger.info(f"{title}={movie.title} FUZZY MATCHED!!")
+            else:
+                logger.info(f"{title} FUZZY MATCH FAILED")
                 yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
-                movie.wiki_document = crawler.get_wikipedia_content(title)
-                if movie.wiki_document:
-                    db_update_wikipedia_data(db, movie.id, movie.wiki_document)
+                movie = fuzzy_slow(db, title, { "year": year, "series": series }, meta)
                 yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
+                if movie:
+                    logger.info(f"{title}에 대한 WEB 검색 성공 {movie.title}")
+                else:
+                    logger.info(f"{title}에 대한 WEB 검색 실패")
+                    continue
+            
+            title = movie.title # we will use more 'accurate' title from now on
 
-            # 5. 영화 리뷰를 불러옵니다. 3번째 인자를 None이 아닌 것으로 설정하면 그 수만큼만 리뷰를 불러옵니다
-            reviews = None # 영화가 여러 개 일 때 첫번째 영화의 리뷰만 불러오는 오류 해결
-            reviews = db_get_movie_reviews(db, movie.id, None)
-            if reviews != None:
-                yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
-                print(f"{title}에 대한 리뷰가 DB에 없습니다. 리뷰를 크롤링 합니다...")
-                reviews = cast(list[str], crawler.get_watcha_reviews(title))
-                db_add_movie_reviews(db, movie.id, reviews)
-                yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
+            if subject.confidence >= primary_threshold:
+                # 4. See if we have any outdated, or missing data in our DB
+                if not movie.wiki_document:
+                    logger.info(f"{title}에 대한 Wikipedia 크롤링 실시")
+                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
+                    movie.wiki_document = crawler.get_wikipedia_content(title)
+                    if movie.wiki_document:
+                        db_update_wikipedia_data(db, movie.id, movie.wiki_document)
+                        logger.info(f"{title}에 대한 Wikipedia 크롤링 성공")
+                    else:
+                        logger.info(f"{title}에 대한 Wikipedia 크롤링 실패")
 
-            # 6. Let's cache it
-            qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews, session_id)
-            print(f"[send_message_to_qachat] chroma에 {title}(이)가 캐시되었습니다")
+                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
 
-        if not hints:
-            print(f"[send_message_to_qachat] 감지된 영화 없음")
+                # 5. 영화 리뷰를 불러옵니다. 3번째 인자를 None이 아닌 것으로 설정하면 그 수만큼만 리뷰를 불러옵니다
+                reviews = None # 영화가 여러 개 일 때 첫번째 영화의 리뷰만 불러오는 오류 해결
+                reviews = db_get_movie_reviews(db, movie.id, None)
+                if not reviews:
+                    logger.info(f"{title}에 대한 Watcha 크롤링 실시")
+                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
+                    reviews = cast(list[str], crawler.get_watcha_reviews(title))
+                    if reviews:
+                        logger.info(f"{title}에 대한 Watcha 크롤링 성공")
+                    else:
+                        logger.info(f"{title}에 대한 Watcha 크롤링 실패")
 
-    
+                    db_add_movie_reviews(db, movie.id, reviews)
+                    yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
+            
+                logger.info(f"{title}에 대한 모든 정보 획득")
+
+                # 6. Let's cache it
+                if not qachat.exist_in_chroma(title, session_id):
+                    qachat.add_to_chroma(title, movie.tmdb_overview, movie.wiki_document, reviews, session_id)
+                    logger.info(f"{title}이 chromaDB에 캐시되었음")
+            else:
+                logger.info(f"{title} 크롤링이 deferred 되었음")
+
     if not qachat.is_memory_on_cache(session_id):
         print(f"[send_message_to_qachat] session cache가 비어있습니다")
         context = db_get_chatroom_context(db, room_id).summary
@@ -274,6 +319,8 @@ async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int,
         yield make_sse(SSE_MESSAGE, chunk)
     yield make_sse(SSE_SIGNAL, SSE_MESSAGE_END)
     
+    logger.info("=======================추천 기능 시작=================")
+    
     # 추천 영화 추출
     hints = qachat.extract_suggested_titles_and_metadata_with_llm(response)
     if hints and hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
@@ -285,12 +332,14 @@ async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int,
             keyword = hint.get("keyword")
             assert(title)
             
+            logger.info(f"추천된 영화: {title}")
+            
             yield make_sse(SSE_SIGNAL, SSE_DB_START)
-            movie, meta = fuzzy_fast(db, title, keyword)
+            movie, meta = fuzzy_fast(db, title, {"year" : keyword} if keyword else None)
             yield make_sse(SSE_SIGNAL, SSE_DB_END)
             if not movie:
                 yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
-                movie = fuzzy_slow(db, title, keyword, meta)
+                movie = fuzzy_slow(db, title, {"year" : keyword} if keyword else None, meta)
                 yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
 
             if movie is not None:
