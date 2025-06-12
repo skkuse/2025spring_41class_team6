@@ -1,4 +1,4 @@
-from llm.tools import get_current_subject
+from llm.tools import get_current_subject, get_recommendations
 import llm.qachat as qachat
 import llm.crawler as crawler
 from database.utils import *
@@ -59,7 +59,8 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
     return { "message": full_answer, "recommendation": movie_ids }
 
 def fuzzy_fast(db: Session, title: str, keyword: dict|None):
-    meta = chroma_fuzzy_search(title, None)
+    meta = chroma_fuzzy_search(title, keyword)
+    logger.info(meta)
     if meta:
         movie = db_find_movie_by_id(db, meta.sqlite_id, True)
         return movie, meta
@@ -209,6 +210,7 @@ async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int,
 
     # 채팅방 ID를 session ID로 사용합니다.
     session_id = str(room_id)
+    logger.info(f"*********************************************************")
     
     logger.info(f"user message: {message}")
     message = _preprocess_user_input(message)
@@ -322,24 +324,29 @@ async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int,
     logger.info("=======================추천 기능 시작=================")
     
     # 추천 영화 추출
-    hints = qachat.extract_suggested_titles_and_metadata_with_llm(response)
-    if hints and hints[0] == '제목이 명확하지 않음 사용자에게 재입력 요청':
-        pass
-    elif hints:
+    recommended = get_recommendations(response)
+    if recommended:
         ids: list[int]= []
-        for hint in hints:
-            title = hint.get("title")
-            keyword = hint.get("keyword")
+        for movie in recommended:
+            title = movie.title
+            year = movie.year
+            series = movie.series
             assert(title)
+            
+            keywords = {}
+            if year:
+                keywords["year"] = year
+            elif series:
+                keywords["series"] = series
             
             logger.info(f"추천된 영화: {title}")
             
             yield make_sse(SSE_SIGNAL, SSE_DB_START)
-            movie, meta = fuzzy_fast(db, title, {"year" : keyword} if keyword else None)
+            movie, meta = fuzzy_fast(db, title, keywords)
             yield make_sse(SSE_SIGNAL, SSE_DB_END)
             if not movie:
                 yield make_sse(SSE_SIGNAL, SSE_CRAWL_START)
-                movie = fuzzy_slow(db, title, {"year" : keyword} if keyword else None, meta)
+                movie = fuzzy_slow(db, title, keywords, meta)
                 yield make_sse(SSE_SIGNAL, SSE_CRAWL_END)
 
             if movie is not None:

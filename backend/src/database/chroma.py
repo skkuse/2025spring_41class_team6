@@ -9,19 +9,6 @@ from datetime import datetime
 from rapidfuzz import fuzz
 from common.logging_config import logger
 
-def best_title_match(results, query_title):
-    best_doc = None
-    best_score = 0
-
-    for doc in results:
-        candidate_title = doc.metadata.get("title", "")
-        score = fuzz.token_sort_ratio(query_title, candidate_title)
-        if score > best_score:
-            best_score = score
-            best_doc = doc
-
-    return best_doc if best_score > 65 else None  # threshold
-
 # GPT === "신"
 __all__ = ["MovieMeta", "chroma_fuzzy_search", "chroma_insert", "chroma_delete", "chroma_update"]
 
@@ -60,24 +47,25 @@ def chroma_fuzzy_search(title: str, keywords: Optional[dict] = None) -> Optional
     query = _build_query(title, keywords)
     logger.info(f"FUZZY search 쿼리: {query}")
     
+    results = None
     try:
-        f = { "filter": {
-                "year": {
-                  "$gte": keywords["year"] - 1,
-                  "$lte": keywords["year"] + 1
-                }
-        }} if keywords and keywords.get("year") else None
-        f = None
         results = db.similarity_search(query, k=10)
+        logger.info(f"최초 유사도 검색: {results}")
+        if keywords and keywords.get("year"):
+            results = [r for r in results if r.metadata.get("year") == keywords.get("year")]
+            logger.info(f"필터링됨: {results}")
     except Exception as e:
-        print(f"[Chroma Error] {e}")
+        logger.error(f"[Chroma Error] {e}")
         return None
 
-    best_doc = best_title_match(results, title)
-    if not best_doc:
+    # best_doc = best_title_match(results, title)
+    # if not best_doc:
+    #     return None
+    logger.info(f"similarity search result: {results}")
+    if not results:
         return None
 
-    meta = best_doc.metadata
+    meta = results[0].metadata
     if meta.get("sqlite_id"):
         return MovieMeta(
             sqlite_id=meta["sqlite_id"],
@@ -94,11 +82,7 @@ def chroma_insert(meta: MovieMeta):
     metadata = meta.model_dump()
     
     content = (
-        f"영화 제목: {meta.title}\n"
-        f"개봉년도: {meta.year}\n"
-        f"시리즈: {meta.series}\n"
-        f"SQLite ID: {meta.sqlite_id}\n"
-        f"TMDB ID: {meta.tmdb_id}"
+        f"{meta.title}"
     )
     logger.info(f"크로마 DB에 삽입 중... {content}")
 
@@ -115,7 +99,7 @@ def chroma_delete(meta: MovieMeta):
         # sqlite_id를 유일 key로 사용
         db.delete([meta.sqlite_id])
     except Exception:
-        print("[Chroma Error] 영화 삭제 중 오류 발생")
+        logger.error("[Chroma Error] 영화 삭제 중 오류 발생")
 
 # 🔁 업데이트 (기존 삭제 후 재삽입)
 def chroma_update(meta: MovieMeta):
@@ -124,6 +108,6 @@ def chroma_update(meta: MovieMeta):
         # sqlite_id를 유일 key로 사용
         db.delete([meta.sqlite_id])
     except Exception:
-        print("[Chroma Error] 영화 업데이트 중 오류 발생")
+        logger.error("[Chroma Error] 영화 업데이트 중 오류 발생")
 
     chroma_insert(meta)
