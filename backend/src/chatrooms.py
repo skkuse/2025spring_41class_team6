@@ -14,11 +14,11 @@ async def get_chatrooms(user: UserInfoInternal = Depends(validate_user), db: Ses
     
     return {
         "normal": [
-            ChatRoom(id=room.id, title=room.title)
+            ChatRoom(id=room.id, title=(room.title or "새 채팅방"))
             for room in rooms if room.character_id is None
         ],
         "immersive": [
-            ChatRoom(id=room.id, title=room.title)
+            ChatRoom(id=room.id, title=(room.title or "새 채팅방"))
             for room in rooms if room.character_id is not None
         ]
     }
@@ -39,7 +39,7 @@ async def create_chatroom(payload: CreateChatroomRequest,
         chats = []
         return CreateChatroomResponse(
             id = room.id,
-            title = room.title,
+            title = room.title or "새 채팅방",
             chats = chats
         )
     else:
@@ -123,6 +123,10 @@ async def post_message(room_id: int,
     if not stream:
         result = await send_message_to_ai(db, user.id, room_id, payload.content)
         response = result["message"]
+        if not db_get_chatroom_name(db, room_id):
+            new_title = llm.tools.generate_chat_title(response)
+            db_update_chatroom_name(db, room_id, new_title)
+
         result = db_append_chat_message(db, room_id, payload.content, response, get_current_summary(room))
         if result is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
@@ -149,7 +153,7 @@ async def post_message(room_id: int,
                 # 버퍼링 방지
                 await asyncio.sleep(0)
 
-            if db_get_chatroom_name(db, room_id) == "new room":
+            if not db_get_chatroom_name(db, room_id):
                 new_title = llm.tools.generate_chat_title(full_answer)
                 if db_update_chatroom_name(db, room_id, new_title):
                     yield f"data: {json.dumps(make_sse(SSE_ROOM_TITLE, new_title))}\n\n"

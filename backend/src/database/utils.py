@@ -70,7 +70,7 @@ def db_make_new_chatroom(db: Session, user_id: int) -> ChatRoomInfoInternal | No
   doc = m.ChatRoom(
     user_id=user_id,
     character_id=None,
-    title="new room"
+    title=""
   )
   db.add(doc)
   try:
