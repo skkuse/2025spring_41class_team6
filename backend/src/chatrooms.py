@@ -116,14 +116,14 @@ async def post_message(room_id: int,
                        stream: bool = Query(False, description="true 시 SSE를 통한 스트리밍 응답"),
                        user: UserInfoInternal= Depends(validate_user),
                        db: Session = Depends(get_db)):
-    from llm_layer import send_message_to_qachat, stream_send_message_to_qachat, get_summary_from_qachat
+    from llm_layer import send_message_to_ai, stream_send_message_to_ai, get_current_summary
     import llm.tools, json
     
     room = db_get_chatroom(db, room_id)
     if not stream:
-        result = await send_message_to_qachat(db, user.id, room_id, payload.content)
+        result = await send_message_to_ai(db, user.id, room_id, payload.content)
         response = result["message"]
-        result = db_append_chat_message(db, room_id, payload.content, response, get_summary_from_qachat(room))
+        result = db_append_chat_message(db, room_id, payload.content, response, get_current_summary(room))
         if result is None:
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail="failed to send message")
 
@@ -136,7 +136,7 @@ async def post_message(room_id: int,
         async def event_generator():
             full_answer = ""
             recommended = []
-            async for chunk in stream_send_message_to_qachat(db, user.id, room_id, payload.content):
+            async for chunk in stream_send_message_to_ai(db, user.id, room_id, payload.content):
                 t = sse_type(chunk)
                 v = sse_content(chunk)
                 if t == SSE_MESSAGE:
@@ -154,7 +154,7 @@ async def post_message(room_id: int,
                 if db_update_chatroom_name(db, room_id, new_title):
                     yield f"data: {json.dumps(make_sse(SSE_ROOM_TITLE, new_title))}\n\n"
 
-            result = db_append_chat_message(db, room_id, payload.content, full_answer, get_summary_from_qachat(room))
+            result = db_append_chat_message(db, room_id, payload.content, full_answer, get_current_summary(room))
 
             if result is None:
                 print("something went wrong...")
