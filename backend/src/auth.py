@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
 from api_schema import *
 from database.utils import *
-from common.env import ENV_API_SKIP_AUTH
 
 USER_ID_COOKIE_KEY = "user_id"
 

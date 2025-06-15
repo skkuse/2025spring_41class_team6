@@ -30,6 +30,8 @@ TmdbSearchOpt = TypedDict(
   }
 )
 
+# 아래 pydantic 타입은 TMDB에서 불러오는 정보들을 구조화한 것
+
 class ActorInfo(BaseModel):
     credit_id: str
     person_id: int

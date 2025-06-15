@@ -20,11 +20,15 @@ def is_room_immersive(room: ChatRoomInfoInternal) -> bool:
   return bool(room.character_id)
 
 
-def get_summary_from_qachat(room: ChatRoomInfoInternal) -> SummaryType:
+def get_current_summary(room: ChatRoomInfoInternal) -> SummaryType:
     import llm.characterchat as cc
     
     session_id = str(room.id)
     
+    # characterchat.py의 session 메모리 공간과
+    # qachat.py의 session 메모리 공간이 분리되어 있어,
+    # 다음과 같이 처리해줘야 합니다. 아마 통합해도 될 것 같긴 한데,
+    # 다른 side-effect가 발생할 수도 있어 일단은 이렇게 처리.
     if is_room_immersive(room):
         memory = cc.get_memory(session_id)
     else:
@@ -35,10 +39,13 @@ def get_summary_from_qachat(room: ChatRoomInfoInternal) -> SummaryType:
     messages_dict = messages_to_dict(messages)
     return { "summary": summary, "messages": messages_dict }
 
+# 유저 입력을 전처리하는 함수
+# ..로 의도되었으나, 현재는 아무것도 안 하는 함수.
+# 일단은 혹시 몰라 남겨둠.
 def _preprocess_user_input(user_input: str) -> str:
     return user_input
 
-async def send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str):
+async def send_message_to_ai(db: Session, user_id: int, room_id: int, message: str):
     """
     message를 AI agent에게 전송하고, 그 응답을 하나의 string으로 반환합니다.  
     비동기 함수이기 때문에 응답을 받을 때는 `await`를 사용해주세요.
@@ -46,7 +53,7 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
     full_answer = ""
     movie_ids = []
     
-    async for chunk in stream_send_message_to_qachat(db, user_id, room_id, message):
+    async for chunk in stream_send_message_to_ai(db, user_id, room_id, message):
         t = sse_type(chunk)
         v = sse_content(chunk)
         if t == SSE_MESSAGE:
@@ -56,6 +63,7 @@ async def send_message_to_qachat(db: Session, user_id: int, room_id: int, messag
 
     return { "message": full_answer, "recommendation": movie_ids }
 
+# fast-path
 def fuzzy_fast(db: Session, title: str, keyword: str|None):
     meta = chroma_fuzzy_search(title, [keyword] if keyword else None)
     if meta:
@@ -63,6 +71,7 @@ def fuzzy_fast(db: Session, title: str, keyword: str|None):
         return movie, meta
     return None, None
 
+# slow-path
 def fuzzy_slow(db: Session, title: str, keyword: str|None, meta: MovieMeta|None):
     movie = None
     if meta:
@@ -185,9 +194,10 @@ async def stream_character_chat(db: Session, room_id: int, message: str, charact
     yield make_sse(SSE_SIGNAL, SSE_MESSAGE_END)
 
 
-async def stream_send_message_to_qachat(db: Session, user_id: int, room_id: int, message: str) -> AsyncGenerator[dict[str, Any], Any]:
+async def stream_send_message_to_ai(db: Session, user_id: int, room_id: int, message: str) -> AsyncGenerator[dict[str, Any], Any]:
     """
-    message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다
+    message를 AI agent에게 전송하고, 그 응답을 stream 모드로 반환하는 AsyncGenerator를 반환합니다  
+    room_id의 ChatRoom이 immersive인지 아닌지는 함수 내부에서 자동으로 처리되기 때문에, 일관적으로 호출하시면 됩니다.
     """
     # 채팅방이 몰입형인지 확인
     room = db_get_chatroom(db, room_id)

@@ -88,7 +88,7 @@ class ArchiveRequest(BaseModel):
     movie_id: int
     rating: int
 
-from database.utils import MovieInfoInternal, PersonInfoInternal, CharacterInfoInternal
+from database.internal_types import MovieInfoInternal, PersonInfoInternal, CharacterInfoInternal
 def public_movie_info(internal: MovieInfoInternal) -> Movie:
     from common.tmdb_utils import tmdb_full_image_path, ImgType
 
