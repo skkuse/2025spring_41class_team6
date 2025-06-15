@@ -11,22 +11,31 @@ from typing import Iterator
 from llm.crawler import get_tmdb_overview, get_wikipedia_content
 
 tmdb.API_KEY = os.environ.get("TMDB_API_KEY")
-openai_key = os.environ.get("OPENAI_API_KEY") # 캐릭터 프롬프트 생성용
-openrouter_key = os.environ.get("OPEN_ROUTER_KEY") # 대화용
+openai_key = os.environ.get("OPENAI_API_KEY")
+openrouter_key = os.environ.get("OPEN_ROUTER_KEY") # 캐릭터 프롬프트 생성용 / 대화용
 
 embedding = OpenAIEmbeddings(openai_api_key=openai_key)
 
-# 캐릭터 프롬프트 생성용
 llm_openai = ChatOpenAI(
     model="gpt-4o",
     temperature=0.7,
     openai_api_key=openai_key
 )
 
+# 캐릭터 프롬프트 생성용: Gemini 2.5 Pro (OpenRouter)
+# GPT, 클로드보다 더 나은 성능.
+llm_draft = ChatOpenAI(
+    model="google/gemini-2.5-pro-preview",
+    temperature=0.8,  # 첫 프롬프트에서는 약간 더 창의적인 개선을 위해 temperature 조정
+    openai_api_key=openrouter_key,
+    openai_api_base="https://openrouter.ai/api/v1",
+    streaming=False
+)
+
 # 프롬프트 개선용 LLM: Gemini 2.5 Pro (OpenRouter)
 llm_refine = ChatOpenAI(
     model="google/gemini-2.5-pro-preview",
-    temperature=0.8,  # 프롬프트에서는 약간 더 창의적인 개선을 위해 temperature 조정
+    temperature=0.6,
     openai_api_key=openrouter_key,
     openai_api_base="https://openrouter.ai/api/v1",
     streaming=False #스트리밍 제외
@@ -68,7 +77,7 @@ character_prompt_template = PromptTemplate.from_template("""
 [사용된 정보]
 (여기에 프롬프트 작성을 위해 사용된 정보를 넣어주세요)
 """)
-character_prompt_chain = LLMChain(prompt=character_prompt_template, llm=llm_openai)
+character_prompt_chain = LLMChain(prompt=character_prompt_template, llm=llm_draft)
 
 refine_template_first = PromptTemplate.from_template("""
 1) 아래의 프롬프트에서 명확하지 않거나 보강이 필요해 보이는 부분이 다듬어주세요.
@@ -80,7 +89,7 @@ refine_template_first = PromptTemplate.from_template("""
 [캐릭터 프롬프트]
 (여기에 생성된 요약 및 대화 예시를 넣어주세요)
 """)
-refine_chain_first = LLMChain(llm=llm_openai, prompt=refine_template_first)
+refine_chain_first = LLMChain(llm=llm_draft, prompt=refine_template_first)
 
 refine_template_second = PromptTemplate.from_template("""
 1. 아래의 프롬프트에서 사실이 아니거나 보강이 필요해 보이는 부분이 있으면 다듬어주세요.
@@ -91,7 +100,7 @@ refine_template_second = PromptTemplate.from_template("""
 {text}
 출력 예시:
 [캐릭터 프롬프트]
-(여기에 생성된 요약 및 대화 예시를 넣어주세요)
+(여기에 생성된 캐릭터의 프롬프트 및 대화 예시를 넣어주세요)
 """)
 refine_chain_second = LLMChain(llm=llm_refine, prompt=refine_template_second)
 
@@ -225,17 +234,17 @@ def run_character_mode():
     })
     draft_prompt = prompt_result['text'].strip()
     # 3-1) 초안 출력
-    print("\n----- [초안: GPT-4o 생성] -----")
+    print("\n----- [초안: Gemini 2.5 Pro 생성] -----")
     print(draft_prompt)
     
     # 4) 1차 개선 프롬프트
-    gpt_review_response = refine_chain_first.invoke({"text": draft_prompt})["text"].strip()
-    # 4-1) GPT 프롬프트 출력
-    print("\n----- [1차 개선 프롬프트: GPT-4o 개선] -----")
-    print(gpt_review_response)
+    review_response = refine_chain_first.invoke({"text": draft_prompt})["text"].strip()
+    # 4-1) Gemini 프롬프트 출력
+    print("\n----- [1차 개선 프롬프트: Gemini 2.5 Pro 개선] -----")
+    print(review_response)
     
     # 5) 2차 개선 (Gemini 2.5 Pro with different temperature)
-    final_response = refine_chain_second.invoke({"text": gpt_review_response})["text"].strip()
+    final_response = refine_chain_second.invoke({"text": review_response})["text"].strip()
     # 5-1) 최종 프롬프트 출력
     print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 최종 개선] -----")
     print(final_response)
@@ -290,19 +299,19 @@ def create_personality(movie: str, character: str, session_id: str):
     })
     draft_prompt = prompt_result['text'].strip()
     # 3-1) 초안 출력
-    print("\n----- [초안: GPT-4o 생성] -----")
+    print("\n----- [초안: Gemini 2.5 Pro 생성] -----")
     print(draft_prompt)
     
     # 4) 1차 개선 프롬프트
-    gpt_review_response = refine_chain_first.invoke({"text": draft_prompt})["text"].strip()
-    # 4-1) GPT 프롬프트 출력
-    print("\n----- [1차 개선 프롬프트: GPT-4o 개선] -----")
-    print(gpt_review_response)
+    review_response = refine_chain_first.invoke({"text": draft_prompt})["text"].strip()
+    # 4-1) Gemini 2.5 Pro 프롬프트 출력
+    print("\n----- [1차 개선 프롬프트: Gemini 2.5 Pro 개선] -----")
+    print(review_response)
     
-    # 5) 2차 개선 (GPT-4o with different temperature)
-    final_response = refine_chain_second.invoke({"text": gpt_review_response})["text"].strip()
+    # 5) 2차 개선 (Gemini 2.5 Pro with different temperature)
+    final_response = refine_chain_second.invoke({"text": review_response})["text"].strip()
     # 5-1) 최종 프롬프트 출력
-    print("\n----- [2차 개선 프롬프트(최종): GPT-4o 최종 개선] -----")
+    print("\n----- [2차 개선 프롬프트(최종): Gemini 2.5 Pro 최종 개선] -----")
     print(final_response)
 
     return cast(str, final_response)

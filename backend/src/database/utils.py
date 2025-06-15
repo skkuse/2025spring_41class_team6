@@ -4,72 +4,8 @@ import sqlalchemy as sql
 from sqlalchemy import Column
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-import wikipedia
 import sqlalchemy.dialects.sqlite as sqlite
-from typing import List, Optional
-from datetime import date, datetime
-from sqlalchemy.inspection import inspect
-from pydantic import BaseModel, ConfigDict
-
-class UserInfoInternal(BaseModel):
-  id: int
-  email: str
-  nickname: str
-  password: str
-  created_at: datetime
-  model_config = ConfigDict(from_attributes=True)
-
-class ChatRoomInfoInternal(BaseModel):
-  id: int
-  user_id: int
-  character_id: Optional[int]
-  title: str
-  created_at: datetime
-  model_config = ConfigDict(from_attributes=True)
-
-class ChatHistoryInternal(BaseModel):
-  id: int
-  room_id: int
-  user_chat: str
-  ai_chat: str
-  timestamp: datetime
-  model_config = ConfigDict(from_attributes=True)
-
-class PersonInfoInternal(BaseModel):
-  id: int
-  name: str
-  profile_image_path: Optional[str]
-
-
-class CharacterInfoInternal(BaseModel):
-  id: int
-  movie_id: int
-  name: str
-  tone: Optional[str] = None
-  description: Optional[str] = None
-  actor: Optional[PersonInfoInternal] = None
-  model_config = ConfigDict(from_attributes=True)
-
-class MovieInfoInternal(BaseModel):
-  id: int
-  tmdb_id: int
-  title: str
-  tmdb_overview: Optional[str]
-  wiki_document: Optional[str]
-  release_date: Optional[date]
-  poster_img_url: Optional[str]
-  trailer_img_url: Optional[str]
-  last_update: datetime
-  genres: List[str] = []
-  characters: List[CharacterInfoInternal] = []
-  directors: List[PersonInfoInternal] = []
-  rating: Optional[int] = None
-  bookmarked: Optional[bool] = None
-  model_config = ConfigDict(from_attributes=True)
-
-class ChatRoomContext(BaseModel):
-  session_id: str
-  summary: str
+from database.internal_types import *
 
 def orm_to_dict(obj):
     if obj is None: return None
@@ -83,7 +19,10 @@ def get_db():
   finally:
     db.close()
 
+######### 유저 정보 #########
+
 def db_create_new_user(db: Session, email: str, password: str, nickname: str):
+  """user 정보를 생성합니다"""
   stmt = sql.select(m.User).where(m.User.email == email)
   res = db.execute(stmt).scalar_one_or_none()
   if res:
@@ -104,13 +43,6 @@ def db_find_user(db: Session, email: str) -> UserInfoInternal|None:
   res = db.execute(stmt).scalar_one_or_none()
   if res is not None:
     return UserInfoInternal.model_validate(res)
-    # return UserInfoInternal(
-    #   id = res.id,              
-    #   email=email,
-    #   nickname=res.nickname,    
-    #   password=res.password,    
-    #   created_at=res.created_at 
-    # )
   return None
 
 def db_find_user_by_id(db: Session, id: int) -> UserInfoInternal|None:
@@ -119,13 +51,6 @@ def db_find_user_by_id(db: Session, id: int) -> UserInfoInternal|None:
   res = db.execute(stmt).scalar_one_or_none()
   if res is not None:
     return UserInfoInternal.model_validate(res)
-    # return UserInfoInternal(
-    #   id = res.id,              
-    #   email=res.email,          
-    #   nickname=res.nickname,    
-    #   password=res.password,    
-    #   created_at=res.created_at 
-    # )
 
 def db_find_user_with_password(db: Session, email: str, password: str) -> UserInfoInternal|None:
   """email을 key로 DB에서 user 정보를 불러옴 + pw 검사"""
@@ -133,6 +58,8 @@ def db_find_user_with_password(db: Session, email: str, password: str) -> UserIn
   if res is None or res.password != password:
     return None
   return res
+
+######### 채팅방 정보 #########
 
 def db_get_chatroom(db: Session, room_id: int) -> ChatRoomInfoInternal:
   stmt = sql.select(m.ChatRoom).where(m.ChatRoom.id == room_id)
@@ -143,7 +70,7 @@ def db_make_new_chatroom(db: Session, user_id: int) -> ChatRoomInfoInternal | No
   doc = m.ChatRoom(
     user_id=user_id,
     character_id=None,
-    title="new room"
+    title=""
   )
   db.add(doc)
   try:
@@ -194,27 +121,6 @@ def db_delete_user_chatroom(db: Session, room_id: int, user_id: int) -> bool:
     db.rollback()
     return False
 
-
-def db_get_chat_messages(db: Session, user_id: int, room_id: int) -> List[ChatHistoryInternal]:
-  """
-  get all chat histories in ChatRoom `room_id`. If the owner does not match the user information,
-  it returns an empty list.
-  """
-  stmt = (
-    sql.select(m.ChatHistory)
-    .join(m.ChatRoom, m.ChatHistory.room_id == m.ChatRoom.id)
-    .where(m.ChatHistory.room_id == room_id)
-    .where(m.ChatRoom.user_id == user_id)
-  )
-  result = db.execute(stmt).scalars().all()
-  return [ChatHistoryInternal(
-    id = chat.id,
-    room_id = chat.room_id,
-    user_chat = chat.user_chat,
-    ai_chat = chat.ai_chat,
-    timestamp = chat.timestamp
-  ) for chat in result]
-
 def db_get_chatroom_name(db: Session, room_id: int) -> str|None:
   stmt = sql.select(m.ChatRoom.title).where(m.ChatRoom.id == room_id)
   return db.execute(stmt).scalar_one_or_none()
@@ -241,6 +147,36 @@ def db_change_chatroom_immersive(db: Session, room_id: int, character_id: int, t
   except:
     db.rollback()
     return False
+
+def db_get_chatroom_context(db: Session, room_id: int) -> ChatRoomContext:
+  stmt = sql.select(m.ChatRoom.summary).where(m.ChatRoom.id == room_id)
+  result = db.execute(stmt).scalar_one()
+  return ChatRoomContext(
+    session_id=str(room_id),
+    summary=result
+  )
+
+######### 메시지 기능 관련 #########
+
+def db_get_chat_messages(db: Session, user_id: int, room_id: int) -> List[ChatHistoryInternal]:
+  """
+  get all chat histories in ChatRoom `room_id`. If the owner does not match the user information,
+  it returns an empty list.
+  """
+  stmt = (
+    sql.select(m.ChatHistory)
+    .join(m.ChatRoom, m.ChatHistory.room_id == m.ChatRoom.id)
+    .where(m.ChatHistory.room_id == room_id)
+    .where(m.ChatRoom.user_id == user_id)
+  )
+  result = db.execute(stmt).scalars().all()
+  return [ChatHistoryInternal(
+    id = chat.id,
+    room_id = chat.room_id,
+    user_chat = chat.user_chat,
+    ai_chat = chat.ai_chat,
+    timestamp = chat.timestamp
+  ) for chat in result]
 
 def db_append_chat_message(db: Session, room_id: int, usr_msg: str, ai_msg: str, summary: dict) -> ChatHistoryInternal|None:
   import json
@@ -269,14 +205,7 @@ def db_append_chat_message(db: Session, room_id: int, usr_msg: str, ai_msg: str,
     db.rollback()
     return None
 
-def db_get_chatroom_context(db: Session, room_id: int) -> ChatRoomContext:
-  stmt = sql.select(m.ChatRoom.summary).where(m.ChatRoom.id == room_id)
-  result = db.execute(stmt).scalar_one()
-  return ChatRoomContext(
-    session_id=str(room_id),
-    summary=result
-  )
-
+######### 기능 관련 #########
 
 def db_get_bookmarked_movies(db: Session, user_id: int):
   """
@@ -585,27 +514,6 @@ def _upsert_actor(db: Session, actor: ActorInfo):
   db.add(doc)
   return doc
 
-def _upsert_character(db: Session, movie_id: int, character_name: str, actor: ActorInfo):
-  stmt = (
-    sql.select(m.CharacterProfile)
-    .where(m.CharacterProfile.movie_id == movie_id)
-    .where(m.CharacterProfile.name == character_name)
-    .where(m.CharacterProfile.actor_id == actor)
-  )
-  stmt = sql.select(m.Actor).where(m.Actor.tmdb_id == actor.person_id)
-  result = db.execute(stmt).scalar_one_or_none()
-  if result:
-    return result
-  
-  doc = m.Actor(
-    tmdb_id = actor.person_id,
-    name = actor.name,
-    original_name = actor.original_name,
-    profile_path = actor.profile_path
-  )
-  db.add(doc)
-  return doc
-
 def _upsert_platform(db: Session, platform: PlatformInfo):
   stmt = sql.select(m.Platform).where(m.Platform.tmdb_id == platform.tmdb_id)
   result = db.execute(stmt).scalar_one_or_none()
@@ -797,14 +705,6 @@ def db_add_movie_reviews(db: Session, id: int, reviews: list[str]):
     db.rollback()
     return False
 
-# asdf = m.SessionLocal()
-# update_movie_by_tmdb_search(asdf, { "query": "기생충" })
-# update_movie_by_tmdb_search(asdf, { "query": "마인크래프트 무비" })
-# update_movie_by_tmdb_search(asdf, { "query": "마인크래프트" })
-# update_movie_by_tmdb_search(asdf, { "query": "아이언맨 3" })
-# print(find_movies_by_alias(asdf, "기생충"))
-# asdf.close()
-
 def db_add_recommended_movies(db: Session, chat_id: int, movie_ids: list[int]):
   stmt = sql.insert(m.RecommendedMovie)
   values = [{"chat_id": chat_id, "movie_id": i} for i in movie_ids]
@@ -834,15 +734,6 @@ def db_get_recommended_movies(db: Session, room_id: int):
       movies_list.append(x)
   
   return movies_list
-
-class CharacterProfileInternal(BaseModel):
-  id             : int
-  movie_id       : int
-  name           : str
-  description    : Optional[str]
-  tone           : Optional[str]
-  other_features : Optional[str]
-  model_config = ConfigDict(from_attributes=True)
 
 def db_get_character_profile_by_id(db: Session, character_id: int) -> CharacterInfoInternal|None:
   stmt = sql.select(m.CharacterProfile).where(m.CharacterProfile.id == character_id)
